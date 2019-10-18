@@ -2,6 +2,9 @@ package com.isig.lab2;
 
 import android.os.Bundle;
 
+import com.esri.arcgisruntime.mapping.ArcGISMap;
+import com.esri.arcgisruntime.mapping.Basemap;
+import com.esri.arcgisruntime.mapping.view.MapView;
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
 import com.google.android.material.snackbar.Snackbar;
 
@@ -13,6 +16,8 @@ import android.view.Menu;
 import android.view.MenuItem;
 
 public class MainActivity extends AppCompatActivity {
+
+    private MapView mMapView;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -29,6 +34,10 @@ public class MainActivity extends AppCompatActivity {
                         .setAction("Action", null).show();
             }
         });
+
+        mMapView = findViewById(R.id.mapView);
+        ArcGISMap map = new ArcGISMap(Basemap.Type.TOPOGRAPHIC, 34.056295, -117.195800, 16);
+        mMapView.setMap(map);
     }
 
     @Override
@@ -51,5 +60,21 @@ public class MainActivity extends AppCompatActivity {
         }
 
         return super.onOptionsItemSelected(item);
+    }
+
+    @Override
+    protected void onPause(){
+        mMapView.pause();
+        super.onPause();
+    }
+    @Override
+    protected void onResume(){
+        super.onResume();
+        mMapView.resume();
+    }
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        mMapView.dispose();
     }
 }
