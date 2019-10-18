@@ -1,4 +1,9 @@
 <resources>
     <string name="app_name">ISIG-Lab2</string>
     <string name="action_settings">Settings</string>
+    <!-- *** Georeferenciacion *** -->
+    <string name="search_title">Search</string>
+    <string name="search_hint">Find an address</string>
+    <string name="nothing_found">Nothing found for</string>
+
 </resources>
