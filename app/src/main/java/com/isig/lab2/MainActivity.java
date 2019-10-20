@@ -17,6 +17,8 @@ import com.esri.arcgisruntime.symbology.SimpleMarkerSymbol;
 import com.esri.arcgisruntime.symbology.TextSymbol;
 import com.esri.arcgisruntime.tasks.geocode.GeocodeParameters;
 import com.esri.arcgisruntime.tasks.geocode.GeocodeResult;
+import com.esri.arcgisruntime.tasks.geocode.LocatorAttribute;
+import com.esri.arcgisruntime.tasks.geocode.LocatorInfo;
 import com.esri.arcgisruntime.tasks.geocode.LocatorTask;
 import com.esri.arcgisruntime.util.ListenableList;
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
@@ -33,6 +35,7 @@ import android.view.MenuItem;
 import android.widget.SearchView;
 import android.widget.Toast;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
 
@@ -75,9 +78,13 @@ public class MainActivity extends AppCompatActivity {
         MenuInflater inflater = getMenuInflater();
         inflater.inflate(R.menu.options_menu, menu);
         MenuItem searchMenuItem = menu.findItem(R.id.search);
+        Log.d("onCreateOptionsMenu","Busca el searchMenuItem");
         if (searchMenuItem != null) {
+            Log.d("onCreateOptionsMenu","Encuentra el searchMenuItem");
             mSearchView = (SearchView) searchMenuItem.getActionView();
+            Log.d("onCreateOptionsMenu","Procesa el searchMenuItem en un mSearchView");
             if (mSearchView != null) {
+                Log.d("onCreateOptionsMenu","Obtengo el mSearchView");
                 SearchManager searchManager = (SearchManager) getSystemService(Context.SEARCH_SERVICE);
                 mSearchView.setSearchableInfo(searchManager.getSearchableInfo(getComponentName()));
                 mSearchView.setIconifiedByDefault(false);
@@ -156,15 +163,19 @@ public class MainActivity extends AppCompatActivity {
 
     // Georeferenciacion
     private void displaySearchResult(GeocodeResult geocodedLocation) {
+        Log.d("displaySearchResult", "Desplego el resultado");
         String displayLabel = geocodedLocation.getLabel();
         TextSymbol textLabel = new TextSymbol(18, displayLabel, Color.rgb(192, 32, 32), TextSymbol.HorizontalAlignment.CENTER, TextSymbol.VerticalAlignment.BOTTOM);
+        Log.d("displaySearchResult", "Armo el elemento y  su texto");
         Graphic textGraphic = new Graphic(geocodedLocation.getDisplayLocation(), textLabel);
         Graphic mapMarker = new Graphic(geocodedLocation.getDisplayLocation(), geocodedLocation.getAttributes(),
                 new SimpleMarkerSymbol(SimpleMarkerSymbol.Style.SQUARE, Color.rgb(255, 0, 0), 12.0f));
         ListenableList allGraphics = mGraphicsOverlay.getGraphics();
         allGraphics.clear();
+        Log.d("displaySearchResult", "Desplego el elemento y el texto");
         allGraphics.add(mapMarker);
         allGraphics.add(textGraphic);
+        Log.d("displaySearchResult", "Centro la vista en el punto.");
         mMapView.setViewpointCenterAsync(geocodedLocation.getDisplayLocation());
     }
 
@@ -179,12 +190,27 @@ public class MainActivity extends AppCompatActivity {
                 mGraphicsOverlay = new GraphicsOverlay();
                 mMapView.getGraphicsOverlays().add(mGraphicsOverlay);
                 Log.d("Init","Cargo el locator");
+                desplegarInfoLocator(mLocatorTask);
+
             } else if (mSearchView != null) {
                 mSearchView.setEnabled(false);
                 Log.d("Init","No cargo el locator");
             }
         });
         mLocatorTask.loadAsync();
+    }
+
+    private void desplegarInfoLocator(LocatorTask locatorTask) {
+        // Get LocatorInfo from a loaded LocatorTask
+        LocatorInfo locatorInfo = locatorTask.getLocatorInfo();
+        List<String> resultAttributeNames = new ArrayList<>();
+
+        // Loop through all the attributes available
+        for (LocatorAttribute resultAttribute : locatorInfo.getResultAttributes()) {
+            resultAttributeNames.add(resultAttribute.getDisplayName());
+            // Use in adapter etc...
+            Log.d("desplegarInfoLocator","desplegarInfoLocator\t"+resultAttribute.getName()+": "+resultAttribute.getDisplayName());
+        }
     }
 
 }
