@@ -30,4 +30,15 @@
         android:layout_margin="@dimen/fab_margin"
         app:srcCompat="@android:drawable/ic_dialog_email" />
 
+    <Spinner
+        android:layout_gravity="bottom"
+        android:id="@+id/spinner"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_alignParentStart="true"
+        android:layout_alignParentTop="true"
+        android:entries="@array/categories_array"
+        android:popupBackground="#fbfafa"
+        tools:popupBackground="@android:color/background_light" />
+
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

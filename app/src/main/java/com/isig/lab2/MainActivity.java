@@ -1,5 +1,6 @@
 package com.isig.lab2;
 
+import android.annotation.SuppressLint;
 import android.app.SearchManager;
 import android.content.Context;
 import android.content.Intent;
@@ -7,12 +8,19 @@ import android.graphics.Color;
 import android.os.Bundle;
 
 import com.esri.arcgisruntime.concurrent.ListenableFuture;
+import com.esri.arcgisruntime.geometry.Point;
 import com.esri.arcgisruntime.loadable.LoadStatus;
 import com.esri.arcgisruntime.mapping.ArcGISMap;
 import com.esri.arcgisruntime.mapping.Basemap;
+import com.esri.arcgisruntime.mapping.view.Callout;
+import com.esri.arcgisruntime.mapping.view.DefaultMapViewOnTouchListener;
 import com.esri.arcgisruntime.mapping.view.Graphic;
 import com.esri.arcgisruntime.mapping.view.GraphicsOverlay;
+import com.esri.arcgisruntime.mapping.view.IdentifyGraphicsOverlayResult;
 import com.esri.arcgisruntime.mapping.view.MapView;
+import com.esri.arcgisruntime.mapping.view.ViewpointChangedEvent;
+import com.esri.arcgisruntime.mapping.view.ViewpointChangedListener;
+import com.esri.arcgisruntime.symbology.SimpleLineSymbol;
 import com.esri.arcgisruntime.symbology.SimpleMarkerSymbol;
 import com.esri.arcgisruntime.symbology.TextSymbol;
 import com.esri.arcgisruntime.tasks.geocode.GeocodeParameters;
@@ -27,12 +35,17 @@ import com.google.android.material.snackbar.Snackbar;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.widget.Toolbar;
 
+import android.text.Html;
 import android.util.Log;
 import android.view.MenuInflater;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.Menu;
 import android.view.MenuItem;
+import android.widget.AdapterView;
 import android.widget.SearchView;
+import android.widget.Spinner;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import java.util.ArrayList;
@@ -47,6 +60,10 @@ public class MainActivity extends AppCompatActivity {
     private GraphicsOverlay mGraphicsOverlay;
     private LocatorTask mLocatorTask = null;
     private GeocodeParameters mGeocodeParameters = null;
+    //Busqueda por categoria
+    private GraphicsOverlay graphicsOverlay;
+    private LocatorTask locator = new LocatorTask("http://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer");
+    private Spinner spinner;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -70,6 +87,21 @@ public class MainActivity extends AppCompatActivity {
         mMapView.setMap(map);
         // *** Georeferenciacion ***
         setupLocator();
+        //**Busqueda por categoria**//
+        // *** ADD ***
+        mMapView.addViewpointChangedListener(new ViewpointChangedListener() {
+            @Override
+            public void viewpointChanged(ViewpointChangedEvent viewpointChangedEvent) {
+                if (graphicsOverlay == null) {
+                    graphicsOverlay = new GraphicsOverlay();
+                    mMapView.getGraphicsOverlays().add(graphicsOverlay);
+                    setupSpinner();
+                    setupPlaceTouchListener();
+                    setupNavigationChangedListener();
+                    mMapView.removeViewpointChangedListener(this);
+                }
+            }
+        });
     }
 
     @Override
@@ -101,7 +133,8 @@ public class MainActivity extends AppCompatActivity {
         int id = item.getItemId();
 
         //noinspection SimplifiableIfStatement
-        if (id == R.id.action_settings) {
+        if (id == R.id.search) {
+
             return true;
         }
 
@@ -192,6 +225,8 @@ public class MainActivity extends AppCompatActivity {
                 Log.d("Init","Cargo el locator");
                 desplegarInfoLocator(mLocatorTask);
 
+
+
             } else if (mSearchView != null) {
                 mSearchView.setEnabled(false);
                 Log.d("Init","No cargo el locator");
@@ -204,13 +239,130 @@ public class MainActivity extends AppCompatActivity {
         // Get LocatorInfo from a loaded LocatorTask
         LocatorInfo locatorInfo = locatorTask.getLocatorInfo();
         List<String> resultAttributeNames = new ArrayList<>();
+        Log.d("desplegarInfoLocator","desplegarInfoLocator: ");
+        //System.out.print(locatorInfo.getProperties());
 
         // Loop through all the attributes available
         for (LocatorAttribute resultAttribute : locatorInfo.getResultAttributes()) {
             resultAttributeNames.add(resultAttribute.getDisplayName());
             // Use in adapter etc...
-            Log.d("desplegarInfoLocator","desplegarInfoLocator\t"+resultAttribute.getName()+": "+resultAttribute.getDisplayName());
+            System.out.print(resultAttribute.getName()+": "+resultAttribute.getDisplayName()+" ");
         }
     }
 
+    //Busqueda por categoria
+    private void findPlaces(String placeCategory) {
+        GeocodeParameters parameters = new GeocodeParameters();
+        Point searchPoint;
+
+        if (mMapView.getVisibleArea() != null) {
+            searchPoint = mMapView.getVisibleArea().getExtent().getCenter();
+            if (searchPoint == null) {
+                return;
+            }
+        } else {
+            return;
+        }
+        parameters.setPreferredSearchLocation(searchPoint);
+        parameters.setMaxResults(25);
+
+        List<String> outputAttributes = parameters.getResultAttributeNames();
+        outputAttributes.add("Place_addr");
+        outputAttributes.add("PlaceName");
+        // Execute the search and add the places to the graphics overlay.
+        final ListenableFuture<List<GeocodeResult>> results = locator.geocodeAsync(placeCategory, parameters);
+        results.addDoneListener(() -> {
+            try {
+                ListenableList<Graphic> graphics = graphicsOverlay.getGraphics();
+                graphics.clear();
+                List<GeocodeResult> places = results.get();
+                for (GeocodeResult result : places) {
+
+                    // Add a graphic representing each location with a simple marker symbol.
+                    SimpleMarkerSymbol placeSymbol = new SimpleMarkerSymbol(SimpleMarkerSymbol.Style.CIRCLE, Color.GREEN, 10);
+                    placeSymbol.setOutline(new SimpleLineSymbol(SimpleLineSymbol.Style.SOLID, Color.WHITE, 2));
+                    Graphic graphic = new Graphic(result.getDisplayLocation(), placeSymbol);
+                    java.util.Map<String, Object> attributes = result.getAttributes();
+
+                    // Store the location attributes with the graphic for later recall when this location is identified.
+                    for (String key : attributes.keySet()) {
+                        String value = attributes.get(key).toString();
+                        graphic.getAttributes().put(key, value);
+                    }
+                    graphics.add(graphic);
+                }
+            } catch (InterruptedException | ExecutionException exception) {
+                exception.printStackTrace();
+            }
+        });
+    }
+
+    private void showCalloutAtLocation(Graphic graphic, Point mapPoint) {
+        Callout callout = mMapView.getCallout();
+        TextView calloutContent = new TextView(getApplicationContext());
+
+        callout.setLocation(graphic.computeCalloutLocation(mapPoint, mMapView));
+        calloutContent.setTextColor(Color.BLACK);
+        calloutContent.setText(Html.fromHtml("<b>" + graphic.getAttributes().get("PlaceName").toString() + "</b><br>" + graphic.getAttributes().get("Place_addr").toString()));
+        callout.setContent(calloutContent);
+        callout.show();
+    }
+
+    private void setupSpinner() {
+        spinner = findViewById(R.id.spinner);
+        spinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> adapterView, View view, int i, long l) {
+                findPlaces(adapterView.getItemAtPosition(i).toString());
+            }
+
+            @Override
+            public void onNothingSelected(AdapterView<?> adapterView) {
+            }
+        });
+        findPlaces(spinner.getSelectedItem().toString());
+    }
+
+    private void setupNavigationChangedListener() {
+        mMapView.addNavigationChangedListener(navigationChangedEvent -> {
+            if (!navigationChangedEvent.isNavigating()) {
+                mMapView.getCallout().dismiss();
+                findPlaces(spinner.getSelectedItem().toString());
+            }
+        });
+    }
+
+    @SuppressLint("ClickableViewAccessibility")
+    private void setupPlaceTouchListener() {
+        mMapView.setOnTouchListener(new DefaultMapViewOnTouchListener(this, mMapView) {
+            @Override
+            public boolean onSingleTapConfirmed(MotionEvent motionEvent) {
+
+                // Dismiss a prior callout.
+                mMapView.getCallout().dismiss();
+
+                // get the screen point where user tapped
+                final android.graphics.Point screenPoint = new android.graphics.Point(Math.round(motionEvent.getX()), Math.round(motionEvent.getY()));
+
+                // identify graphics on the graphics overlay
+                final ListenableFuture<IdentifyGraphicsOverlayResult> identifyGraphic = mMapView.identifyGraphicsOverlayAsync(graphicsOverlay, screenPoint, 10.0, false, 2);
+
+                identifyGraphic.addDoneListener(() -> {
+                    try {
+                        IdentifyGraphicsOverlayResult graphicsResult = identifyGraphic.get();
+                        // get the list of graphics returned by identify graphic overlay
+                        List<Graphic> graphicList = graphicsResult.getGraphics();
+
+                        // get the first graphic selected and show its attributes with a callout
+                        if (!graphicList.isEmpty()){
+                            showCalloutAtLocation(graphicList.get(0), mMapView.screenToLocation(screenPoint));
+                        }
+                    } catch (InterruptedException | ExecutionException exception) {
+                        exception.printStackTrace();
+                    }
+                });
+                return super.onSingleTapConfirmed(motionEvent);
+            }
+        });
+    }
 }
