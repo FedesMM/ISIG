@@ -6,4 +6,22 @@
     <string name="search_hint">Find an address</string>
     <string name="nothing_found">Nothing found for</string>
 
+    <!-- *** Puntos *** -->
+    <string name="marcador">Punto</string>
+    <string name="nombre">Nombre:</string>
+    <string name="latitud">Latitud:</string>
+    <string name="longitud">Longitud:</string>
+    <string name="hint_nombre">nombre del punto</string>
+    <string name="hint_latitud">latitud del punto</string>
+    <string name="hint_longitud">longitud del punto</string>
+    <string name="add_marker_from_map">Agregar Punto en Mapa</string>
+    <string name="add_marker_from_latlong">Agregar Punto por Lat/Long</string>
+    <string name="marker_added">Punto agregado</string>
+    <string name="error_parsing_lat">Error al parsear la latitud</string>
+    <string name="error_parsing_long">Error al parsear la longitud</string>
+
+    <!-- Lat Long -->
+    <string name="no_lat_long"> - </string>
+
+
 </resources>
