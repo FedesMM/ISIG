@@ -13,6 +13,7 @@ import com.esri.arcgisruntime.geometry.PointCollection;
 import com.esri.arcgisruntime.geometry.Polygon;
 import com.esri.arcgisruntime.geometry.Polyline;
 import com.esri.arcgisruntime.geometry.SpatialReferences;
+import com.esri.arcgisruntime.layers.ArcGISMapImageLayer;
 import com.esri.arcgisruntime.loadable.LoadStatus;
 import com.esri.arcgisruntime.mapping.ArcGISMap;
 import com.esri.arcgisruntime.mapping.Basemap;
@@ -24,6 +25,9 @@ import com.esri.arcgisruntime.mapping.view.IdentifyGraphicsOverlayResult;
 import com.esri.arcgisruntime.mapping.view.MapView;
 import com.esri.arcgisruntime.mapping.view.ViewpointChangedEvent;
 import com.esri.arcgisruntime.mapping.view.ViewpointChangedListener;
+import com.esri.arcgisruntime.security.AuthenticationManager;
+import com.esri.arcgisruntime.security.DefaultAuthenticationChallengeHandler;
+import com.esri.arcgisruntime.security.OAuthConfiguration;
 import com.esri.arcgisruntime.symbology.SimpleFillSymbol;
 import com.esri.arcgisruntime.symbology.SimpleLineSymbol;
 import com.esri.arcgisruntime.symbology.SimpleMarkerSymbol;
@@ -53,6 +57,7 @@ import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.net.MalformedURLException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -84,6 +89,9 @@ public class MainActivity extends AppCompatActivity {
                 .setAction("Action", null).show());
 
         mMapView = findViewById(R.id.mapView);
+        /**Autenticacion**/
+        setupOAuthManager();
+
         ArcGISMap map = new ArcGISMap(Basemap.Type.TOPOGRAPHIC, 34.056295, -117.195800, 16);
         mMapView.setMap(map);
         // *** Georeferenciacion ***
@@ -106,6 +114,10 @@ public class MainActivity extends AppCompatActivity {
 
         //*Desplegar punto, linea y poligono*//
         createGraphics();
+        /**Autenticacion**/
+        // *** ADD ***
+        ArcGISMapImageLayer traffic = new ArcGISMapImageLayer(getResources().getString(R.string.traffic_service));
+        map.getOperationalLayers().add(traffic);
     }
 
     @Override
@@ -422,6 +434,20 @@ public class MainActivity extends AppCompatActivity {
         createPolygonGraphics();
     }
 
+    /**Autenticacion**/
+    private void setupOAuthManager() {
+        String clientId = getResources().getString(R.string.client_id);
+        String redirectUrl = getResources().getString(R.string.redirect_url);
+
+        try {
+            OAuthConfiguration oAuthConfiguration = new OAuthConfiguration("https://www.arcgis.com", clientId, redirectUrl);
+            DefaultAuthenticationChallengeHandler authenticationChallengeHandler = new DefaultAuthenticationChallengeHandler(this);
+            AuthenticationManager.setAuthenticationChallengeHandler(authenticationChallengeHandler);
+            AuthenticationManager.addOAuthConfiguration(oAuthConfiguration);
+        } catch (MalformedURLException e) {
+            e.printStackTrace();
+        }
+    }
 
 }
 
