@@ -14,6 +14,7 @@ import com.esri.arcgisruntime.geometry.Polygon;
 import com.esri.arcgisruntime.geometry.Polyline;
 import com.esri.arcgisruntime.geometry.SpatialReferences;
 import com.esri.arcgisruntime.layers.ArcGISMapImageLayer;
+import com.esri.arcgisruntime.geometry.SpatialReference;
 import com.esri.arcgisruntime.loadable.LoadStatus;
 import com.esri.arcgisruntime.mapping.ArcGISMap;
 import com.esri.arcgisruntime.mapping.Basemap;
@@ -34,15 +35,16 @@ import com.esri.arcgisruntime.symbology.SimpleMarkerSymbol;
 import com.esri.arcgisruntime.symbology.TextSymbol;
 import com.esri.arcgisruntime.tasks.geocode.GeocodeParameters;
 import com.esri.arcgisruntime.tasks.geocode.GeocodeResult;
-import com.esri.arcgisruntime.tasks.geocode.LocatorAttribute;
-import com.esri.arcgisruntime.tasks.geocode.LocatorInfo;
 import com.esri.arcgisruntime.tasks.geocode.LocatorTask;
 import com.esri.arcgisruntime.util.ListenableList;
+import com.google.android.material.bottomsheet.BottomSheetBehavior;
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
-import com.google.android.material.snackbar.Snackbar;
 
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.widget.Toolbar;
+import butterknife.BindView;
+import butterknife.ButterKnife;
+import butterknife.OnClick;
 
 import android.text.Html;
 import android.util.Log;
@@ -54,6 +56,8 @@ import android.view.MenuItem;
 import android.widget.AdapterView;
 import android.widget.SearchView;
 import android.widget.Spinner;
+import android.os.Handler;
+import android.view.ViewGroup;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -63,47 +67,57 @@ import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.ExecutionException;
 
+import com.isig.lab2.models.Marker;
+
 public class MainActivity extends AppCompatActivity {
 
     private MapView mMapView;
+
     //Georeferenciacion
     private SearchView mSearchView = null;
     private GraphicsOverlay mGraphicsOverlay;
     private LocatorTask mLocatorTask = null;
-    private GeocodeParameters mGeocodeParameters = null;
+
     //Busqueda por categoria
-    private GraphicsOverlay graphicsOverlay;
     private LocatorTask locator = new LocatorTask("http://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer");
     private Spinner spinner;
+    private GeocodeParameters mGeocodeParameters = new GeocodeParameters();
+
+    private List<Marker> markers = new ArrayList<>();
+    private boolean addMarkerFromMap = false;
+    private BottomSheetBehavior bottomSheetBehavior;
+
+    @BindView(R.id.bottom_sheet_markers) View bottomSheetMarkers;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+        ButterKnife.bind(this);
+
         Toolbar toolbar = findViewById(R.id.toolbar);
         setSupportActionBar(toolbar);
 
-
         FloatingActionButton fab = findViewById(R.id.fab);
-        fab.setOnClickListener(view -> Snackbar.make(view, "Replace with your own action", Snackbar.LENGTH_LONG)
-                .setAction("Action", null).show());
+        fab.setOnClickListener(view -> showBottomSheet(bottomSheetMarkers));
 
-        mMapView = findViewById(R.id.mapView);
-        /**Autenticacion**/
+        /** Autenticacion **/
         setupOAuthManager();
-
+        mMapView = findViewById(R.id.mapView);
         ArcGISMap map = new ArcGISMap(Basemap.Type.TOPOGRAPHIC, 34.056295, -117.195800, 16);
         mMapView.setMap(map);
-        // *** Georeferenciacion ***
+        
+        
+        /** Georeferenciacion **/
         setupLocator();
+        
         //**Busqueda por categoria**//
-        // *** ADD ***
         mMapView.addViewpointChangedListener(new ViewpointChangedListener() {
             @Override
             public void viewpointChanged(ViewpointChangedEvent viewpointChangedEvent) {
-                if (graphicsOverlay == null) {
-                    graphicsOverlay = new GraphicsOverlay();
-                    mMapView.getGraphicsOverlays().add(graphicsOverlay);
+                if (mGraphicsOverlay == null) {
+                    mGraphicsOverlay = new GraphicsOverlay();
+                    mMapView.getGraphicsOverlays().add(mGraphicsOverlay);
                     setupSpinner();
                     setupPlaceTouchListener();
                     setupNavigationChangedListener();
@@ -112,10 +126,10 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
-        //*Desplegar punto, linea y poligono*//
+        /** Desplegar punto, linea y poligono **/
         createGraphics();
+        
         /**Autenticacion**/
-        // *** ADD ***
         ArcGISMapImageLayer traffic = new ArcGISMapImageLayer(getResources().getString(R.string.traffic_service));
         map.getOperationalLayers().add(traffic);
     }
@@ -126,13 +140,9 @@ public class MainActivity extends AppCompatActivity {
         MenuInflater inflater = getMenuInflater();
         inflater.inflate(R.menu.options_menu, menu);
         MenuItem searchMenuItem = menu.findItem(R.id.search);
-        Log.d("onCreateOptionsMenu","Busca el searchMenuItem");
         if (searchMenuItem != null) {
-            Log.d("onCreateOptionsMenu","Encuentra el searchMenuItem");
             mSearchView = (SearchView) searchMenuItem.getActionView();
-            Log.d("onCreateOptionsMenu","Procesa el searchMenuItem en un mSearchView");
             if (mSearchView != null) {
-                Log.d("onCreateOptionsMenu","Obtengo el mSearchView");
                 SearchManager searchManager = (SearchManager) getSystemService(Context.SEARCH_SERVICE);
                 assert searchManager != null;
                 mSearchView.setSearchableInfo(searchManager.getSearchableInfo(getComponentName()));
@@ -163,15 +173,56 @@ public class MainActivity extends AppCompatActivity {
         mMapView.pause();
         super.onPause();
     }
+
     @Override
     protected void onResume(){
         super.onResume();
         mMapView.resume();
     }
+
     @Override
     protected void onDestroy() {
         super.onDestroy();
         mMapView.dispose();
+    }
+
+    @OnClick(R.id.text_cancel_create_sheet)
+    protected void onCancelBottomSheetClicked() {
+        hideBottomSheet();
+    }
+
+    @OnClick(R.id.add_marker_from_map)
+    protected void onAddMarkerFromMap() {
+        addMarkerFromMap = true;
+        Log.d("onAddMarkerFromMap", "addMarkerFromMap: " + addMarkerFromMap);
+        hideBottomSheet();
+    }
+
+    @OnClick(R.id.add_marker_from_lat_long)
+    protected void onAddMarkerFromLatLong() {
+        showAddMarkerFromLatLongDialog();
+        hideBottomSheet();
+    }
+
+    private void setBottomSheet(View bottomSheet) {
+        bottomSheetBehavior = BottomSheetBehavior.from(bottomSheet);
+        bottomSheetBehavior.setHideable(true);
+        bottomSheetBehavior.setState(BottomSheetBehavior.STATE_COLLAPSED);
+    }
+
+    private void showBottomSheet(View bottomSheet) {
+        setBottomSheet(bottomSheet);
+        if (bottomSheetBehavior != null && bottomSheetBehavior.getState() == BottomSheetBehavior.STATE_COLLAPSED) {
+            bottomSheetBehavior.setState(BottomSheetBehavior.STATE_EXPANDED);
+            bottomSheet.requestLayout();
+        }
+    }
+
+    public void hideBottomSheet() {
+        if (bottomSheetBehavior != null && bottomSheetBehavior.getState() == BottomSheetBehavior.STATE_EXPANDED) {
+            bottomSheetBehavior.setState(BottomSheetBehavior.STATE_COLLAPSED);
+            bottomSheetBehavior = null;
+        }
     }
 
     //Georeferenciacion
@@ -234,15 +285,14 @@ public class MainActivity extends AppCompatActivity {
         mLocatorTask = new LocatorTask(locatorService);
         mLocatorTask.addDoneLoadingListener(() -> {
             if (mLocatorTask.getLoadStatus() == LoadStatus.LOADED) {
-                mGeocodeParameters = new GeocodeParameters();
                 mGeocodeParameters.getResultAttributeNames().add("*");
                 mGeocodeParameters.setMaxResults(1);
                 mGraphicsOverlay = new GraphicsOverlay();
                 mMapView.getGraphicsOverlays().add(mGraphicsOverlay);
                 Log.d("Init","Cargo el locator");
-                desplegarInfoLocator(mLocatorTask);
 
-
+                //touchListener();
+                setAddMarkerListener();
 
             } else if (mSearchView != null) {
                 mSearchView.setEnabled(false);
@@ -250,21 +300,6 @@ public class MainActivity extends AppCompatActivity {
             }
         });
         mLocatorTask.loadAsync();
-    }
-
-    private void desplegarInfoLocator(LocatorTask locatorTask) {
-        // Get LocatorInfo from a loaded LocatorTask
-        LocatorInfo locatorInfo = locatorTask.getLocatorInfo();
-        List<String> resultAttributeNames = new ArrayList<>();
-        Log.d("desplegarInfoLocator","desplegarInfoLocator: ");
-        //System.out.print(locatorInfo.getProperties());
-
-        // Loop through all the attributes available
-        for (LocatorAttribute resultAttribute : locatorInfo.getResultAttributes()) {
-            resultAttributeNames.add(resultAttribute.getDisplayName());
-            // Use in adapter etc...
-            System.out.print(resultAttribute.getName()+": "+resultAttribute.getDisplayName()+" ");
-        }
     }
 
     //Busqueda por categoria
@@ -290,7 +325,7 @@ public class MainActivity extends AppCompatActivity {
         final ListenableFuture<List<GeocodeResult>> results = locator.geocodeAsync(placeCategory, parameters);
         results.addDoneListener(() -> {
             try {
-                ListenableList<Graphic> graphics = graphicsOverlay.getGraphics();
+                ListenableList<Graphic> graphics = mGraphicsOverlay.getGraphics();
                 graphics.clear();
                 List<GeocodeResult> places = results.get();
                 for (GeocodeResult result : places) {
@@ -362,7 +397,7 @@ public class MainActivity extends AppCompatActivity {
                 final android.graphics.Point screenPoint = new android.graphics.Point(Math.round(motionEvent.getX()), Math.round(motionEvent.getY()));
 
                 // identify graphics on the graphics overlay
-                final ListenableFuture<IdentifyGraphicsOverlayResult> identifyGraphic = mMapView.identifyGraphicsOverlayAsync(graphicsOverlay, screenPoint, 10.0, false, 2);
+                final ListenableFuture<IdentifyGraphicsOverlayResult> identifyGraphic = mMapView.identifyGraphicsOverlayAsync(mGraphicsOverlay, screenPoint, 10.0, false, 2);
 
                 identifyGraphic.addDoneListener(() -> {
                     try {
@@ -446,6 +481,118 @@ public class MainActivity extends AppCompatActivity {
             AuthenticationManager.addOAuthConfiguration(oAuthConfiguration);
         } catch (MalformedURLException e) {
             e.printStackTrace();
+        }
+    }
+    
+    @SuppressLint("ClickableViewAccessibility")
+    private void touchListener() {
+        mMapView.setOnTouchListener(new DefaultMapViewOnTouchListener(this, mMapView){
+            public boolean onSingleTapConfirmed(MotionEvent e) {
+                Log.d("setOnTouchListener", "onSingleTapConfirmed");
+                final android.graphics.Point screenPoint = new android.graphics.Point((int) e.getX(), (int) e.getY());
+                // identify graphics on the graphics overlay
+                final ListenableFuture<IdentifyGraphicsOverlayResult>
+                        identifyGraphic = mMapView.identifyGraphicsOverlayAsync(mGraphicsOverlay, screenPoint, 10.0, false, 2);
+                identifyGraphic.addDoneListener(() -> {
+                    try {
+                        IdentifyGraphicsOverlayResult grOverlayResult = identifyGraphic.get();
+                        // get the list of graphics returned by identify graphic overlay
+                        List<Graphic> graphics = grOverlayResult.getGraphics();
+                        Callout mCallout = mMapView.getCallout();
+                        if (mCallout.isShowing()) {
+                            mCallout.dismiss();
+                        }
+                        if (!graphics.isEmpty()) {
+                            // get callout, set content and show
+                            String text = "";
+                            if (graphics.get(0).getAttributes().get("city") != null) {
+                                text = graphics.get(0).getAttributes().get("city").toString();
+                            }
+                            if (graphics.get(0).getAttributes().get("country") != null) {
+                                if (!text.equals("")){
+                                    text += ", ";
+                                }
+                                text += graphics.get(0).getAttributes().get("country").toString();
+                            }
+                            if (!text.equals("")) {
+                                TextView calloutContent = new TextView(getApplicationContext());
+                                calloutContent.setText(text);
+                                Point mapPoint = mMapView.screenToLocation(screenPoint);
+                                mCallout.setLocation(mapPoint);
+                                mCallout.setContent(calloutContent);
+                                mCallout.show();
+                                new Handler().postDelayed(mCallout::dismiss, 3000);
+                            }
+                        }
+                    } catch (InterruptedException | ExecutionException ie) {
+                        ie.printStackTrace();
+                    }
+                });
+                return super.onSingleTapConfirmed(e);
+            }
+        });
+    }
+
+    @SuppressLint("ClickableViewAccessibility")
+    private void setAddMarkerListener() {
+        mMapView.setOnTouchListener(new DefaultMapViewOnTouchListener(this, mMapView) {
+            public boolean onSingleTapConfirmed(MotionEvent e) {
+                openAddMarkerFromMapDialog(e);
+                return true;
+            }
+        });
+    }
+
+    private void openAddMarkerFromMapDialog(MotionEvent e) {
+        if (addMarkerFromMap) {
+            android.graphics.Point p = new android.graphics.Point(Math.round(e.getX()), Math.round(e.getY()));
+            Point point = mMapView.screenToLocation(p);
+            Marker marker = new Marker("", "", point.getY(), point.getX(), Marker.REPRESENTATION_UTM);
+            ViewGroup vg = (ViewGroup) findViewById(android.R.id.content);
+            marker.showAddFromMapDialog(MainActivity.this, vg, point, markers, new Marker.Viewer.AddMarkerCallback() {
+                @Override
+                public void onMarkerAdded() {
+                    Log.d("onMarkerAdded", "");
+                    Toast.makeText(MainActivity.this, getString(R.string.marker_added), Toast.LENGTH_LONG).show();
+                    showMarkers();
+                    addMarkerFromMap = false;
+                }
+
+                @Override
+                public void onMarkerAddingCanceled() {
+                    Log.d("onMarkerAddingCanceled", "");
+                    addMarkerFromMap = false;
+                }
+            });
+        }
+    }
+
+    private void showAddMarkerFromLatLongDialog() {
+        Marker marker = new Marker("", "", 0, 0, Marker.REPRESENTATION_WGS84);
+        ViewGroup vg = (ViewGroup) findViewById(android.R.id.content);
+        Point point = new Point(0,0);
+        marker.showAddFromLatLongDialog(MainActivity.this, vg, point, markers, new Marker.Viewer.AddMarkerCallback() {
+            @Override
+            public void onMarkerAdded() {
+                Log.d("onMarkerAdded", "");
+                Toast.makeText(MainActivity.this, getString(R.string.marker_added), Toast.LENGTH_LONG).show();
+                showMarkers();
+            }
+
+            @Override
+            public void onMarkerAddingCanceled() {
+                Log.d("onMarkerAddingCanceled", "");
+            }
+        });
+    }
+
+    private void showMarkers() {
+        for (Marker m: markers) {
+            SpatialReference sp = m.getRepresentation() == Marker.REPRESENTATION_UTM ? SpatialReferences.getWebMercator() : SpatialReferences.getWgs84();
+            Point marker = new Point(m.getLon(), m.getLat(), sp);
+            SimpleMarkerSymbol sms = new SimpleMarkerSymbol(SimpleMarkerSymbol.Style.CIRCLE, m.getColor(), 12);
+            Graphic g = new Graphic(marker, sms);
+            mGraphicsOverlay.getGraphics().add(g);
         }
     }
 
