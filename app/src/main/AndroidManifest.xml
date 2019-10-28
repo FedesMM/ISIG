@@ -31,6 +31,7 @@
 
         </activity>
         <!-- *** Autenticacion*** -->
+        <!-- *** Ruta mas corta*** -->
         <activity
             android:name="com.esri.arcgisruntime.security.DefaultOAuthIntentReceiver"
             android:label="OAuthIntentReceiver"
