@@ -6,24 +6,15 @@ import android.content.Context;
 import android.content.Intent;
 import android.graphics.Color;
 import android.os.Bundle;
-import android.text.Html;
-import android.util.Log;
-import android.view.Menu;
-import android.view.MenuInflater;
-import android.view.MenuItem;
-import android.view.MotionEvent;
-import android.view.View;
-import android.widget.AdapterView;
-import android.widget.SearchView;
-import android.widget.Spinner;
-import android.widget.TextView;
-import android.widget.Toast;
-
-import androidx.appcompat.app.AppCompatActivity;
-import androidx.appcompat.widget.Toolbar;
 
 import com.esri.arcgisruntime.concurrent.ListenableFuture;
+import com.esri.arcgisruntime.geometry.Point;
+import com.esri.arcgisruntime.geometry.PointCollection;
+import com.esri.arcgisruntime.geometry.Polygon;
+import com.esri.arcgisruntime.geometry.Polyline;
+import com.esri.arcgisruntime.geometry.SpatialReferences;
 import com.esri.arcgisruntime.layers.ArcGISMapImageLayer;
+import com.esri.arcgisruntime.geometry.SpatialReference;
 import com.esri.arcgisruntime.loadable.LoadStatus;
 import com.esri.arcgisruntime.mapping.ArcGISMap;
 import com.esri.arcgisruntime.mapping.Basemap;
@@ -33,8 +24,6 @@ import com.esri.arcgisruntime.mapping.view.Graphic;
 import com.esri.arcgisruntime.mapping.view.GraphicsOverlay;
 import com.esri.arcgisruntime.mapping.view.IdentifyGraphicsOverlayResult;
 import com.esri.arcgisruntime.mapping.view.MapView;
-import com.esri.arcgisruntime.mapping.view.ViewpointChangedEvent;
-import com.esri.arcgisruntime.mapping.view.ViewpointChangedListener;
 import com.esri.arcgisruntime.security.AuthenticationManager;
 import com.esri.arcgisruntime.security.DefaultAuthenticationChallengeHandler;
 import com.esri.arcgisruntime.security.OAuthConfiguration;
@@ -53,8 +42,29 @@ import com.esri.arcgisruntime.tasks.networkanalysis.RouteResult;
 import com.esri.arcgisruntime.tasks.networkanalysis.RouteTask;
 import com.esri.arcgisruntime.tasks.networkanalysis.Stop;
 import com.esri.arcgisruntime.util.ListenableList;
+import com.google.android.material.bottomsheet.BottomSheetBehavior;
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
-import com.google.android.material.snackbar.Snackbar;
+
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.appcompat.widget.Toolbar;
+import butterknife.BindView;
+import butterknife.ButterKnife;
+import butterknife.OnClick;
+
+import android.text.Html;
+import android.util.Log;
+import android.view.MenuInflater;
+import android.view.MotionEvent;
+import android.view.View;
+import android.view.Menu;
+import android.view.MenuItem;
+import android.widget.AdapterView;
+import android.widget.SearchView;
+import android.widget.Spinner;
+import android.os.Handler;
+import android.view.ViewGroup;
+import android.widget.TextView;
+import android.widget.Toast;
 
 import java.net.MalformedURLException;
 import java.util.ArrayList;
@@ -62,18 +72,23 @@ import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.ExecutionException;
 
-import com.esri.arcgisruntime.mapping.view.GraphicsOverlay;
-import com.esri.arcgisruntime.geometry.*;
-
+import com.google.android.material.snackbar.Snackbar;
+import com.isig.lab2.models.Marker;
 
 public class MainActivity extends AppCompatActivity {
 
     private MapView mMapView;
+
     //Georeferenciacion
     private SearchView mSearchView = null;
     private GraphicsOverlay mGraphicsOverlay;
     private LocatorTask mLocatorTask = null;
-    private GeocodeParameters mGeocodeParameters = null;
+    private GeocodeParameters mGeocodeParameters = new GeocodeParameters();
+
+    private List<Marker> markers = new ArrayList<>();
+    private boolean addMarkerFromMap = false;
+    private BottomSheetBehavior bottomSheetBehavior;
+
     //Busqueda por categoria
     private GraphicsOverlay graphicsOverlay;
     private LocatorTask locator = new LocatorTask("http://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer");
@@ -82,27 +97,31 @@ public class MainActivity extends AppCompatActivity {
     private Point mStart;
     private Point mEnd;
 
+    @BindView(R.id.bottom_sheet_markers) View bottomSheetMarkers;
+
     @SuppressLint("ClickableViewAccessibility")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+        ButterKnife.bind(this);
+
         Toolbar toolbar = findViewById(R.id.toolbar);
         setSupportActionBar(toolbar);
 
-
         FloatingActionButton fab = findViewById(R.id.fab);
-        fab.setOnClickListener(view -> Snackbar.make(view, "Replace with your own action", Snackbar.LENGTH_LONG)
-                .setAction("Action", null).show());
+        fab.setOnClickListener(view -> showBottomSheet(bottomSheetMarkers));
 
         mMapView = findViewById(R.id.mapView);
         /**Autenticacion**/
         setupOAuthManager();
 
-        ArcGISMap map = new ArcGISMap(Basemap.Type.TOPOGRAPHIC, 34.056295, -117.195800, 16);
+        ArcGISMap map = new ArcGISMap(Basemap.Type.TOPOGRAPHIC, -34.72, -56.085, 16);
         mMapView.setMap(map);
+
         // *** Georeferenciacion ***
         setupLocator();
+        
         //**Busqueda por categoria**//
         /**
         mMapView.addViewpointChangedListener(new ViewpointChangedListener() {
@@ -128,11 +147,15 @@ public class MainActivity extends AppCompatActivity {
         /**Ruta mas corta**/
         mMapView.setOnTouchListener (new DefaultMapViewOnTouchListener(this, mMapView) {
             @Override public boolean onSingleTapConfirmed(MotionEvent e) {
-                android.graphics.Point screenPoint = new android.graphics.Point(
-                        Math.round(e.getX()),
-                        Math.round(e.getY()));
-                Point mapPoint = mMapView.screenToLocation(screenPoint);
-                mapClicked(mapPoint);
+                if (addMarkerFromMap) {
+                    openAddMarkerFromMapDialog(e);
+                } else {
+                    android.graphics.Point screenPoint = new android.graphics.Point(
+                            Math.round(e.getX()),
+                            Math.round(e.getY()));
+                    Point mapPoint = mMapView.screenToLocation(screenPoint);
+                    mapClicked(mapPoint);
+                }
                 return super.onSingleTapConfirmed(e);
             }
         });
@@ -148,13 +171,9 @@ public class MainActivity extends AppCompatActivity {
         MenuInflater inflater = getMenuInflater();
         inflater.inflate(R.menu.options_menu, menu);
         MenuItem searchMenuItem = menu.findItem(R.id.search);
-        Log.d("onCreateOptionsMenu","Busca el searchMenuItem");
         if (searchMenuItem != null) {
-            Log.d("onCreateOptionsMenu","Encuentra el searchMenuItem");
             mSearchView = (SearchView) searchMenuItem.getActionView();
-            Log.d("onCreateOptionsMenu","Procesa el searchMenuItem en un mSearchView");
             if (mSearchView != null) {
-                Log.d("onCreateOptionsMenu","Obtengo el mSearchView");
                 SearchManager searchManager = (SearchManager) getSystemService(Context.SEARCH_SERVICE);
                 assert searchManager != null;
                 mSearchView.setSearchableInfo(searchManager.getSearchableInfo(getComponentName()));
@@ -185,11 +204,13 @@ public class MainActivity extends AppCompatActivity {
         mMapView.pause();
         super.onPause();
     }
+
     @Override
     protected void onResume(){
         super.onResume();
         mMapView.resume();
     }
+
     @Override
     protected void onDestroy() {
         super.onDestroy();
@@ -263,8 +284,6 @@ public class MainActivity extends AppCompatActivity {
                 mMapView.getGraphicsOverlays().add(mGraphicsOverlay);
                 Log.d("Init","Cargo el locator");
                 desplegarInfoLocator(mLocatorTask);
-
-
 
             } else if (mSearchView != null) {
                 mSearchView.setEnabled(false);
@@ -549,6 +568,96 @@ public class MainActivity extends AppCompatActivity {
                 showError("Unable to load RouteTask " + solveRouteTask.getLoadStatus().toString());
             }
         });
+    }
+
+    @OnClick(R.id.text_cancel_create_sheet)
+    protected void onCancelBottomSheetClicked() {
+        hideBottomSheet();
+    }
+
+    @OnClick(R.id.add_marker_from_map)
+    protected void onAddMarkerFromMap() {
+        addMarkerFromMap = true;
+        Log.d("onAddMarkerFromMap", "addMarkerFromMap: " + addMarkerFromMap);
+        hideBottomSheet();
+    }
+
+    @OnClick(R.id.add_marker_from_lat_long)
+    protected void onAddMarkerFromLatLong() {
+        showAddMarkerFromLatLongDialog();
+        hideBottomSheet();
+    }
+
+    private void setBottomSheet(View bottomSheet) {
+        bottomSheetBehavior = BottomSheetBehavior.from(bottomSheet);
+        bottomSheetBehavior.setHideable(true);
+        bottomSheetBehavior.setState(BottomSheetBehavior.STATE_COLLAPSED);
+    }
+
+    private void showBottomSheet(View bottomSheet) {
+        setBottomSheet(bottomSheet);
+        if (bottomSheetBehavior != null && bottomSheetBehavior.getState() == BottomSheetBehavior.STATE_COLLAPSED) {
+            bottomSheetBehavior.setState(BottomSheetBehavior.STATE_EXPANDED);
+            bottomSheet.requestLayout();
+        }
+    }
+
+    public void hideBottomSheet() {
+        if (bottomSheetBehavior != null && bottomSheetBehavior.getState() == BottomSheetBehavior.STATE_EXPANDED) {
+            bottomSheetBehavior.setState(BottomSheetBehavior.STATE_COLLAPSED);
+            bottomSheetBehavior = null;
+        }
+    }
+
+    private void openAddMarkerFromMapDialog(MotionEvent e) {
+        android.graphics.Point p = new android.graphics.Point(Math.round(e.getX()), Math.round(e.getY()));
+        Point point = mMapView.screenToLocation(p);
+        Marker marker = new Marker("", "", point.getY(), point.getX(), Marker.REPRESENTATION_UTM);
+        ViewGroup vg = (ViewGroup) findViewById(android.R.id.content);
+        marker.showAddFromMapDialog(MainActivity.this, vg, point, markers, new Marker.Viewer.AddMarkerCallback() {
+            @Override
+            public void onMarkerAdded() {
+                Log.d("onMarkerAdded", "");
+                Toast.makeText(MainActivity.this, getString(R.string.marker_added), Toast.LENGTH_LONG).show();
+                showMarkers();
+                addMarkerFromMap = false;
+            }
+
+            @Override
+            public void onMarkerAddingCanceled() {
+                Log.d("onMarkerAddingCanceled", "");
+                addMarkerFromMap = false;
+            }
+        });
+    }
+
+    private void showAddMarkerFromLatLongDialog() {
+        Marker marker = new Marker("", "", 0, 0, Marker.REPRESENTATION_WGS84);
+        ViewGroup vg = (ViewGroup) findViewById(android.R.id.content);
+        Point point = new Point(0,0);
+        marker.showAddFromLatLongDialog(MainActivity.this, vg, point, markers, new Marker.Viewer.AddMarkerCallback() {
+            @Override
+            public void onMarkerAdded() {
+                Log.d("onMarkerAdded", "");
+                Toast.makeText(MainActivity.this, getString(R.string.marker_added), Toast.LENGTH_LONG).show();
+                showMarkers();
+            }
+
+            @Override
+            public void onMarkerAddingCanceled() {
+                Log.d("onMarkerAddingCanceled", "");
+            }
+        });
+    }
+
+    private void showMarkers() {
+        for (Marker m: markers) {
+            SpatialReference sp = m.getRepresentation() == Marker.REPRESENTATION_UTM ? SpatialReferences.getWebMercator() : SpatialReferences.getWgs84();
+            Point marker = new Point(m.getLon(), m.getLat(), sp);
+            SimpleMarkerSymbol sms = new SimpleMarkerSymbol(SimpleMarkerSymbol.Style.CIRCLE, m.getColor(), 12);
+            Graphic g = new Graphic(marker, sms);
+            mGraphicsOverlay.getGraphics().add(g);
+        }
     }
 }
 
