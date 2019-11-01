@@ -20,6 +20,8 @@
     <string name="marker_added">Punto agregado</string>
     <string name="error_parsing_lat">Error al parsear la latitud</string>
     <string name="error_parsing_long">Error al parsear la longitud</string>
+    <string name="find_route">Encontrar ruta mas corta</string>
+    <string name="clear_route">Limpiar rutas</string>
 
     <!-- Lat Long -->
     <string name="no_lat_long"> - </string>

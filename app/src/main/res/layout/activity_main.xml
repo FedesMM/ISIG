@@ -20,7 +20,22 @@
 
     </com.google.android.material.appbar.AppBarLayout>
 
-    <include layout="@layout/content_main" />
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent">
+
+        <include layout="@layout/content_main" />
+
+        <ProgressBar
+            android:id="@+id/progress_bar"
+            android:layout_width="100dp"
+            android:layout_height="100dp"
+            android:gravity="center"
+            android:layout_gravity="center"
+            android:visibility="gone"/>
+
+    </FrameLayout>
+
 
     <com.google.android.material.floatingactionbutton.FloatingActionButton
         android:id="@+id/fab"
@@ -31,16 +46,5 @@
         app:srcCompat="@android:drawable/ic_dialog_map" />
 
     <include layout="@layout/bottom_sheet_markers"/>
-
-    <Spinner
-        android:layout_gravity="bottom"
-        android:id="@+id/spinner"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_alignParentStart="true"
-        android:layout_alignParentTop="true"
-        android:entries="@array/categories_array"
-        android:popupBackground="#fbfafa"
-        tools:popupBackground="@android:color/background_light" />
 
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

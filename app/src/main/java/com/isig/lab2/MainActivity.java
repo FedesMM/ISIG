@@ -13,7 +13,6 @@ import com.esri.arcgisruntime.geometry.PointCollection;
 import com.esri.arcgisruntime.geometry.Polygon;
 import com.esri.arcgisruntime.geometry.Polyline;
 import com.esri.arcgisruntime.geometry.SpatialReferences;
-import com.esri.arcgisruntime.layers.ArcGISMapImageLayer;
 import com.esri.arcgisruntime.geometry.SpatialReference;
 import com.esri.arcgisruntime.loadable.LoadStatus;
 import com.esri.arcgisruntime.mapping.ArcGISMap;
@@ -58,10 +57,8 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.Menu;
 import android.view.MenuItem;
-import android.widget.AdapterView;
+import android.widget.ProgressBar;
 import android.widget.SearchView;
-import android.widget.Spinner;
-import android.os.Handler;
 import android.view.ViewGroup;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -72,12 +69,9 @@ import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.ExecutionException;
 
-import com.google.android.material.snackbar.Snackbar;
 import com.isig.lab2.models.Marker;
 
 public class MainActivity extends AppCompatActivity {
-
-    private MapView mMapView;
 
     //Georeferenciacion
     private SearchView mSearchView = null;
@@ -92,12 +86,14 @@ public class MainActivity extends AppCompatActivity {
     //Busqueda por categoria
     private GraphicsOverlay graphicsOverlay;
     private LocatorTask locator = new LocatorTask("http://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer");
-    private Spinner spinner;
     //Ruta mas corta
-    private Point mStart;
-    private Point mEnd;
+    private List<Point> mPoint = new ArrayList<>();
 
+    @BindView(R.id.mapView) MapView mMapView;
     @BindView(R.id.bottom_sheet_markers) View bottomSheetMarkers;
+    @BindView(R.id.fab) FloatingActionButton fab;
+    @BindView(R.id.toolbar) Toolbar toolbar;
+    @BindView(R.id.progress_bar) ProgressBar progressBar;
 
     @SuppressLint("ClickableViewAccessibility")
     @Override
@@ -106,13 +102,11 @@ public class MainActivity extends AppCompatActivity {
         setContentView(R.layout.activity_main);
         ButterKnife.bind(this);
 
-        Toolbar toolbar = findViewById(R.id.toolbar);
+        progressBar.setVisibility(View.VISIBLE);
         setSupportActionBar(toolbar);
 
-        FloatingActionButton fab = findViewById(R.id.fab);
         fab.setOnClickListener(view -> showBottomSheet(bottomSheetMarkers));
 
-        mMapView = findViewById(R.id.mapView);
         /**Autenticacion**/
         setupOAuthManager();
 
@@ -121,29 +115,12 @@ public class MainActivity extends AppCompatActivity {
 
         // *** Georeferenciacion ***
         setupLocator();
-        
-        //**Busqueda por categoria**//
-        /**
-        mMapView.addViewpointChangedListener(new ViewpointChangedListener() {
-            @Override
-            public void viewpointChanged(ViewpointChangedEvent viewpointChangedEvent) {
-                if (graphicsOverlay == null) {
-                    graphicsOverlay = new GraphicsOverlay();
-                    mMapView.getGraphicsOverlays().add(graphicsOverlay);
-                    setupSpinner();
-                    setupPlaceTouchListener();
-                    setupNavigationChangedListener();
-                    mMapView.removeViewpointChangedListener(this);
-                }
-            }
-        });
-         **/
 
         //*Desplegar punto, linea y poligono*//
         //createGraphics();
         /**Autenticacion**/
-        ArcGISMapImageLayer traffic = new ArcGISMapImageLayer(getResources().getString(R.string.traffic_service));
-        map.getOperationalLayers().add(traffic);
+        //ArcGISMapImageLayer traffic = new ArcGISMapImageLayer(getResources().getString(R.string.traffic_service));
+        //map.getOperationalLayers().add(traffic);
         /**Ruta mas corta**/
         mMapView.setOnTouchListener (new DefaultMapViewOnTouchListener(this, mMapView) {
             @Override public boolean onSingleTapConfirmed(MotionEvent e) {
@@ -283,6 +260,7 @@ public class MainActivity extends AppCompatActivity {
                 mGraphicsOverlay = new GraphicsOverlay();
                 mMapView.getGraphicsOverlays().add(mGraphicsOverlay);
                 Log.d("Init","Cargo el locator");
+                progressBar.setVisibility(View.GONE);
                 desplegarInfoLocator(mLocatorTask);
 
             } else if (mSearchView != null) {
@@ -366,64 +344,6 @@ public class MainActivity extends AppCompatActivity {
         callout.show();
     }
 
-    private void setupSpinner() {
-        spinner = findViewById(R.id.spinner);
-        spinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
-            @Override
-            public void onItemSelected(AdapterView<?> adapterView, View view, int i, long l) {
-                findPlaces(adapterView.getItemAtPosition(i).toString());
-            }
-
-            @Override
-            public void onNothingSelected(AdapterView<?> adapterView) {
-            }
-        });
-        findPlaces(spinner.getSelectedItem().toString());
-    }
-
-    private void setupNavigationChangedListener() {
-        mMapView.addNavigationChangedListener(navigationChangedEvent -> {
-            if (!navigationChangedEvent.isNavigating()) {
-                mMapView.getCallout().dismiss();
-                findPlaces(spinner.getSelectedItem().toString());
-            }
-        });
-    }
-
-    @SuppressLint("ClickableViewAccessibility")
-    private void setupPlaceTouchListener() {
-        mMapView.setOnTouchListener(new DefaultMapViewOnTouchListener(this, mMapView) {
-            @Override
-            public boolean onSingleTapConfirmed(MotionEvent motionEvent) {
-
-                // Dismiss a prior callout.
-                mMapView.getCallout().dismiss();
-
-                // get the screen point where user tapped
-                final android.graphics.Point screenPoint = new android.graphics.Point(Math.round(motionEvent.getX()), Math.round(motionEvent.getY()));
-
-                // identify graphics on the graphics overlay
-                final ListenableFuture<IdentifyGraphicsOverlayResult> identifyGraphic = mMapView.identifyGraphicsOverlayAsync(graphicsOverlay, screenPoint, 10.0, false, 2);
-
-                identifyGraphic.addDoneListener(() -> {
-                    try {
-                        IdentifyGraphicsOverlayResult graphicsResult = identifyGraphic.get();
-                        // get the list of graphics returned by identify graphic overlay
-                        List<Graphic> graphicList = graphicsResult.getGraphics();
-
-                        // get the first graphic selected and show its attributes with a callout
-                        if (!graphicList.isEmpty()){
-                            showCalloutAtLocation(graphicList.get(0), mMapView.screenToLocation(screenPoint));
-                        }
-                    } catch (InterruptedException | ExecutionException exception) {
-                        exception.printStackTrace();
-                    }
-                });
-                return super.onSingleTapConfirmed(motionEvent);
-            }
-        });
-    }
-
     //Mostrar puntos, lineas y poligonos
     private void createGraphicsOverlay() {
         mGraphicsOverlay = new GraphicsOverlay();
@@ -489,40 +409,17 @@ public class MainActivity extends AppCompatActivity {
             showError(e.getMessage());
         }
     }
+
     //Ruta mas corta
-    private void setMapMarker(Point location, SimpleMarkerSymbol.Style style, int markerColor, int outlineColor) {
+    private void mapClicked(Point location) {
+        mPoint.add(location);
+
         float markerSize = 8.0f;
         float markerOutlineThickness = 2.0f;
-        SimpleMarkerSymbol pointSymbol = new SimpleMarkerSymbol(style, markerColor, markerSize);
-        pointSymbol.setOutline(new SimpleLineSymbol(SimpleLineSymbol.Style.SOLID, outlineColor, markerOutlineThickness));
+        SimpleMarkerSymbol pointSymbol = new SimpleMarkerSymbol(SimpleMarkerSymbol.Style.DIAMOND, Color.rgb(226, 119, 40), markerSize);
+        pointSymbol.setOutline(new SimpleLineSymbol(SimpleLineSymbol.Style.SOLID,  Color.BLUE, markerOutlineThickness));
         Graphic pointGraphic = new Graphic(location, pointSymbol);
         mGraphicsOverlay.getGraphics().add(pointGraphic);
-    }
-
-    private void setStartMarker(Point location) {
-        mGraphicsOverlay.getGraphics().clear();
-        setMapMarker(location, SimpleMarkerSymbol.Style.DIAMOND, Color.rgb(226, 119, 40), Color.BLUE);
-        mStart = location;
-        mEnd = null;
-    }
-
-    private void setEndMarker(Point location) {
-        setMapMarker(location, SimpleMarkerSymbol.Style.SQUARE, Color.rgb(40, 119, 226), Color.RED);
-        mEnd = location;
-        findRoute();
-    }
-
-    private void mapClicked(Point location) {
-        if (mStart == null) {
-            // Start is not set, set it to a tapped location
-            setStartMarker(location);
-        } else if (mEnd == null) {
-            // End is not set, set it to the tapped location then find the route
-            setEndMarker(location);
-        } else {
-            // Both locations are set; re-set the start to the tapped location
-            setStartMarker(location);
-        }
     }
 
     private void showError(String message) {
@@ -541,12 +438,14 @@ public class MainActivity extends AppCompatActivity {
                     try {
                         RouteParameters routeParameters = routeParamsFuture.get();
                         List<Stop> stops = new ArrayList<>();
-                        stops.add(new Stop(mStart));
-                        stops.add(new Stop(mEnd));
+                        for (int i = 0; i < mPoint.size(); i++) {
+                            stops.add(new Stop(mPoint.get(i)));
+                        }
                         routeParameters.setStops(stops);
                         // Code from the next step goes here
                         final ListenableFuture<RouteResult> routeResultFuture = solveRouteTask.solveRouteAsync(routeParameters);
                         routeResultFuture.addDoneListener(() -> {
+                            progressBar.setVisibility(View.GONE);
                             try {
                                 RouteResult routeResult = routeResultFuture.get();
                                 Route firstRoute = routeResult.getRoutes().get(0);
@@ -585,6 +484,20 @@ public class MainActivity extends AppCompatActivity {
     @OnClick(R.id.add_marker_from_lat_long)
     protected void onAddMarkerFromLatLong() {
         showAddMarkerFromLatLongDialog();
+        hideBottomSheet();
+    }
+
+    @OnClick(R.id.find_route)
+    protected void onFindRouteClicked() {
+        findRoute();
+        hideBottomSheet();
+        progressBar.setVisibility(View.VISIBLE);
+    }
+
+    @OnClick(R.id.clear_route)
+    protected void onClearRouteClicked() {
+        mPoint.clear();
+        mGraphicsOverlay.getGraphics().clear();
         hideBottomSheet();
     }
 
