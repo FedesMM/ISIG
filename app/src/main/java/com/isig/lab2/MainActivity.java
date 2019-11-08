@@ -17,11 +17,9 @@ import com.esri.arcgisruntime.geometry.SpatialReference;
 import com.esri.arcgisruntime.loadable.LoadStatus;
 import com.esri.arcgisruntime.mapping.ArcGISMap;
 import com.esri.arcgisruntime.mapping.Basemap;
-import com.esri.arcgisruntime.mapping.view.Callout;
 import com.esri.arcgisruntime.mapping.view.DefaultMapViewOnTouchListener;
 import com.esri.arcgisruntime.mapping.view.Graphic;
 import com.esri.arcgisruntime.mapping.view.GraphicsOverlay;
-import com.esri.arcgisruntime.mapping.view.IdentifyGraphicsOverlayResult;
 import com.esri.arcgisruntime.mapping.view.MapView;
 import com.esri.arcgisruntime.security.AuthenticationManager;
 import com.esri.arcgisruntime.security.DefaultAuthenticationChallengeHandler;
@@ -50,7 +48,7 @@ import butterknife.BindView;
 import butterknife.ButterKnife;
 import butterknife.OnClick;
 
-import android.text.Html;
+import android.os.Handler;
 import android.util.Log;
 import android.view.MenuInflater;
 import android.view.MotionEvent;
@@ -60,16 +58,16 @@ import android.view.MenuItem;
 import android.widget.ProgressBar;
 import android.widget.SearchView;
 import android.view.ViewGroup;
-import android.widget.TextView;
 import android.widget.Toast;
 
 import java.net.MalformedURLException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
 import java.util.concurrent.ExecutionException;
 
+import com.google.gson.Gson;
 import com.isig.lab2.models.Marker;
+import com.isig.lab2.models.Path;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -82,6 +80,7 @@ public class MainActivity extends AppCompatActivity {
     private List<Marker> markers = new ArrayList<>();
     private boolean addMarkerFromMap = false;
     private BottomSheetBehavior bottomSheetBehavior;
+    private Graphic currentPosition;
 
     //Busqueda por categoria
     private GraphicsOverlay graphicsOverlay;
@@ -110,7 +109,7 @@ public class MainActivity extends AppCompatActivity {
         /**Autenticacion**/
         setupOAuthManager();
 
-        ArcGISMap map = new ArcGISMap(Basemap.Type.TOPOGRAPHIC, -34.72, -56.085, 16);
+        ArcGISMap map = new ArcGISMap(Basemap.Type.TOPOGRAPHIC, -34.726272, -56.227631, 16);
         mMapView.setMap(map);
 
         // *** Georeferenciacion ***
@@ -286,64 +285,6 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    //Busqueda por categoria
-    private void findPlaces(String placeCategory) {
-        GeocodeParameters parameters = new GeocodeParameters();
-        Point searchPoint;
-
-        if (mMapView.getVisibleArea() != null) {
-            searchPoint = mMapView.getVisibleArea().getExtent().getCenter();
-            if (searchPoint == null) {
-                return;
-            }
-        } else {
-            return;
-        }
-        parameters.setPreferredSearchLocation(searchPoint);
-        parameters.setMaxResults(25);
-
-        List<String> outputAttributes = parameters.getResultAttributeNames();
-        outputAttributes.add("Place_addr");
-        outputAttributes.add("PlaceName");
-        // Execute the search and add the places to the graphics overlay.
-        final ListenableFuture<List<GeocodeResult>> results = locator.geocodeAsync(placeCategory, parameters);
-        results.addDoneListener(() -> {
-            try {
-                ListenableList<Graphic> graphics = graphicsOverlay.getGraphics();
-                graphics.clear();
-                List<GeocodeResult> places = results.get();
-                for (GeocodeResult result : places) {
-
-                    // Add a graphic representing each location with a simple marker symbol.
-                    SimpleMarkerSymbol placeSymbol = new SimpleMarkerSymbol(SimpleMarkerSymbol.Style.CIRCLE, Color.GREEN, 10);
-                    placeSymbol.setOutline(new SimpleLineSymbol(SimpleLineSymbol.Style.SOLID, Color.WHITE, 2));
-                    Graphic graphic = new Graphic(result.getDisplayLocation(), placeSymbol);
-                    java.util.Map<String, Object> attributes = result.getAttributes();
-
-                    // Store the location attributes with the graphic for later recall when this location is identified.
-                    for (String key : attributes.keySet()) {
-                        String value = Objects.requireNonNull(attributes.get(key)).toString();
-                        graphic.getAttributes().put(key, value);
-                    }
-                    graphics.add(graphic);
-                }
-            } catch (InterruptedException | ExecutionException exception) {
-                exception.printStackTrace();
-            }
-        });
-    }
-
-    private void showCalloutAtLocation(Graphic graphic, Point mapPoint) {
-        Callout callout = mMapView.getCallout();
-        TextView calloutContent = new TextView(getApplicationContext());
-
-        callout.setLocation(graphic.computeCalloutLocation(mapPoint, mMapView));
-        calloutContent.setTextColor(Color.BLACK);
-        calloutContent.setText(Html.fromHtml("<b>" + graphic.getAttributes().get("PlaceName").toString() + "</b><br>" + graphic.getAttributes().get("Place_addr").toString()));
-        callout.setContent(calloutContent);
-        callout.show();
-    }
-
     //Mostrar puntos, lineas y poligonos
     private void createGraphicsOverlay() {
         mGraphicsOverlay = new GraphicsOverlay();
@@ -437,6 +378,7 @@ public class MainActivity extends AppCompatActivity {
                 routeParamsFuture.addDoneListener(() -> {
                     try {
                         RouteParameters routeParameters = routeParamsFuture.get();
+                        routeParameters.setFindBestSequence(false); // TODO: Reorder or not for min length path
                         List<Stop> stops = new ArrayList<>();
                         for (int i = 0; i < mPoint.size(); i++) {
                             stops.add(new Stop(mPoint.get(i)));
@@ -454,6 +396,9 @@ public class MainActivity extends AppCompatActivity {
                                 SimpleLineSymbol routeSymbol = new SimpleLineSymbol(SimpleLineSymbol.Style.SOLID, Color.BLUE, 4.0f);
                                 Graphic routeGraphic = new Graphic(routePolyline, routeSymbol);
                                 mGraphicsOverlay.getGraphics().add(routeGraphic);
+
+                                getPointsFromMap();
+
                             } catch (InterruptedException | ExecutionException e) {
                                 showError("Solve RouteTask failed " + e.getMessage());
                             }
@@ -467,6 +412,46 @@ public class MainActivity extends AppCompatActivity {
                 showError("Unable to load RouteTask " + solveRouteTask.getLoadStatus().toString());
             }
         });
+    }
+
+    private void getPointsFromMap() {
+        Log.d("mGraphicsOverlay size", mGraphicsOverlay.getGraphics().size() + " ");
+
+        for (int i = 0; i < mGraphicsOverlay.getGraphics().size(); i++) {
+            Graphic g = mGraphicsOverlay.getGraphics().get(i);
+            if (g.getGeometry() != null && g.getGeometry().getInternal() != null &&
+                    g.getGeometry().getInternal().w() != null && !g.getGeometry().getInternal().w().equals("")) {
+                Path path = new Gson().fromJson(g.getGeometry().getInternal().w(), Path.class);
+                if (path.getPaths() != null && path.getPaths().length > 0) {
+                    Log.d("Graphic " + i, ", " + g.getGeometry().getInternal().w());
+                    List<Marker> points = path.getPoints();
+                    Log.d("path.getPoints", " size " + points.size());
+
+                    showPosition(points);
+                }
+            }
+        }
+    }
+
+    private void showPosition(List<Marker> points) {
+        List<Marker> markers = Path.pointsInPath(new ArrayList<>(points), 50, 1);
+        showPointByInterval(markers,1000);
+    }
+
+    private void showPointByInterval(List<Marker> list, int interval) {
+        if (!list.isEmpty()) {
+            new Handler().postDelayed(() -> {
+                Marker marker = list.get(0);
+
+                Marker m = new Marker("", "", marker.lon, marker.lat, Marker.REPRESENTATION_WGS84, Color.WHITE);
+                showPosition(m);
+
+                Log.d("showPosition: ", marker.lat + " " + marker.lon);
+
+                list.remove(0);
+                showPointByInterval(list, interval);
+            }, interval);
+        }
     }
 
     @OnClick(R.id.text_cancel_create_sheet)
@@ -525,14 +510,14 @@ public class MainActivity extends AppCompatActivity {
     private void openAddMarkerFromMapDialog(MotionEvent e) {
         android.graphics.Point p = new android.graphics.Point(Math.round(e.getX()), Math.round(e.getY()));
         Point point = mMapView.screenToLocation(p);
-        Marker marker = new Marker("", "", point.getY(), point.getX(), Marker.REPRESENTATION_UTM);
+        Marker marker = new Marker(point.getX(), point.getY(), Marker.REPRESENTATION_UTM);
         ViewGroup vg = (ViewGroup) findViewById(android.R.id.content);
         marker.showAddFromMapDialog(MainActivity.this, vg, point, markers, new Marker.Viewer.AddMarkerCallback() {
             @Override
             public void onMarkerAdded() {
                 Log.d("onMarkerAdded", "");
                 Toast.makeText(MainActivity.this, getString(R.string.marker_added), Toast.LENGTH_LONG).show();
-                showMarkers();
+                showMarkers(markers);
                 addMarkerFromMap = false;
             }
 
@@ -545,7 +530,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void showAddMarkerFromLatLongDialog() {
-        Marker marker = new Marker("", "", 0, 0, Marker.REPRESENTATION_WGS84);
+        Marker marker = new Marker(0, 0, Marker.REPRESENTATION_WGS84);
         ViewGroup vg = (ViewGroup) findViewById(android.R.id.content);
         Point point = new Point(0,0);
         marker.showAddFromLatLongDialog(MainActivity.this, vg, point, markers, new Marker.Viewer.AddMarkerCallback() {
@@ -553,7 +538,7 @@ public class MainActivity extends AppCompatActivity {
             public void onMarkerAdded() {
                 Log.d("onMarkerAdded", "");
                 Toast.makeText(MainActivity.this, getString(R.string.marker_added), Toast.LENGTH_LONG).show();
-                showMarkers();
+                showMarkers(markers);
             }
 
             @Override
@@ -563,14 +548,26 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
-    private void showMarkers() {
+    private void showMarkers(List<Marker> markers) {
         for (Marker m: markers) {
-            SpatialReference sp = m.getRepresentation() == Marker.REPRESENTATION_UTM ? SpatialReferences.getWebMercator() : SpatialReferences.getWgs84();
-            Point marker = new Point(m.getLon(), m.getLat(), sp);
+            SpatialReference sp = m.getSpatialReference();
+            Point marker = new Point(m.lon, m.lat, sp);
             SimpleMarkerSymbol sms = new SimpleMarkerSymbol(SimpleMarkerSymbol.Style.CIRCLE, m.getColor(), 12);
             Graphic g = new Graphic(marker, sms);
             mGraphicsOverlay.getGraphics().add(g);
         }
+    }
+
+    private void showPosition(Marker m) {
+        SpatialReference sp = m.getSpatialReference();
+        Point marker = new Point(m.lon, m.lat, sp);
+        SimpleMarkerSymbol sms = new SimpleMarkerSymbol(SimpleMarkerSymbol.Style.CIRCLE, m.getColor(), 12);
+        Graphic g = new Graphic(marker, sms);
+        mGraphicsOverlay.getGraphics().add(g);
+        if (mGraphicsOverlay.getGraphics().contains(g)) {
+            mGraphicsOverlay.getGraphics().remove(currentPosition);
+        }
+        currentPosition = g;
     }
 }
 

@@ -13,6 +13,8 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import com.esri.arcgisruntime.geometry.Point;
+import com.esri.arcgisruntime.geometry.SpatialReference;
+import com.esri.arcgisruntime.geometry.SpatialReferences;
 import com.google.gson.Gson;
 import com.isig.lab2.R;
 import com.isig.lab2.utils.GeographicUtils;
@@ -29,8 +31,8 @@ public class Marker {
 
     private String id;
     private String nombre;
-    private double lat;
-    private double lon;
+    public double lat;
+    public double lon;
     private int color;
     private int representation;
 
@@ -39,6 +41,24 @@ public class Marker {
     public Marker(String id, String nombre, double lat, double lon, int representation) {
         this.id = id;
         this.nombre = nombre;
+        this.lat = lat;
+        this.lon = lon;
+        this.representation = representation;
+        this.color = Color.RED;
+    }
+
+    public Marker(String id, String nombre, double lon, double lat, int representation, int color) {
+        this.id = id;
+        this.nombre = nombre;
+        this.lat = lat;
+        this.lon = lon;
+        this.representation = representation;
+        this.color = color;
+    }
+
+    public Marker(double lon, double lat, int representation) {
+        this.id = "";
+        this.nombre = "";
         this.lat = lat;
         this.lon = lon;
         this.color = Color.RED;
@@ -107,6 +127,20 @@ public class Marker {
         ADClose.show();
     }
 
+    public static double LotLong2Km(Marker org, Marker dst) {
+        if ((org.lat == dst.lat) && (org.lon == dst.lon)) {
+            return 0;
+        } else {
+            double theta = org.lon - dst.lon;
+            double dist = Math.sin(Math.toRadians(org.lat)) * Math.sin(Math.toRadians(dst.lat)) + Math.cos(Math.toRadians(org.lat)) * Math.cos(Math.toRadians(dst.lat)) * Math.cos(Math.toRadians(theta));
+            dist = Math.acos(dist);
+            dist = Math.toDegrees(dist);
+            dist = dist * 60 * 1.1515;
+            dist = dist * 1.609344;
+            return (dist);
+        }
+    }
+
     public String getId() {
         return id;
     }
@@ -123,22 +157,6 @@ public class Marker {
         this.nombre = nombre;
     }
 
-    public double getLat() {
-        return lat;
-    }
-
-    public void setLat(double lat) {
-        this.lat = lat;
-    }
-
-    public double getLon() {
-        return lon;
-    }
-
-    public void setLon(double lon) {
-        this.lon = lon;
-    }
-
     public int getColor() {
         return color;
     }
@@ -153,6 +171,10 @@ public class Marker {
 
     public void setRepresentation(int representation) {
         this.representation = representation;
+    }
+
+    public SpatialReference getSpatialReference() {
+        return getRepresentation() == Marker.REPRESENTATION_UTM ? SpatialReferences.getWebMercator() : SpatialReferences.getWgs84();
     }
 
     @Override
