@@ -482,6 +482,7 @@ public class MainActivity extends AppCompatActivity {
     @OnClick(R.id.clear_route)
     protected void onClearRouteClicked() {
         mPoint.clear();
+        currentPosition = null;
         mGraphicsOverlay.getGraphics().clear();
         hideBottomSheet();
     }
