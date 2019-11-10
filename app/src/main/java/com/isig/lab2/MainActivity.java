@@ -77,6 +77,7 @@ public class MainActivity extends AppCompatActivity {
     private GraphicsOverlay mGraphicsOverlay;
     private LocatorTask mLocatorTask = null;
     private GeocodeParameters mGeocodeParameters = new GeocodeParameters();
+    private boolean locatorLoaded = false;
 
     private List<Marker> markers = new ArrayList<>();
     private boolean addMarkerFromMap = false;
@@ -125,16 +126,20 @@ public class MainActivity extends AppCompatActivity {
         //ArcGISMapImageLayer traffic = new ArcGISMapImageLayer(getResources().getString(R.string.traffic_service));
         //map.getOperationalLayers().add(traffic);
         /**Ruta mas corta**/
-        mMapView.setOnTouchListener (new DefaultMapViewOnTouchListener(this, mMapView) {
-            @Override public boolean onSingleTapConfirmed(MotionEvent e) {
-                if (addMarkerFromMap) {
-                    openAddMarkerFromMapDialog(e);
-                } else {
-                    android.graphics.Point screenPoint = new android.graphics.Point(
-                            Math.round(e.getX()),
-                            Math.round(e.getY()));
-                    Point mapPoint = mMapView.screenToLocation(screenPoint);
-                    mapClicked(mapPoint);
+        mMapView.setOnTouchListener(new DefaultMapViewOnTouchListener(this, mMapView) {
+            @Override
+            public boolean onSingleTapConfirmed(MotionEvent e) {
+                if (locatorLoaded) {
+                    if (addMarkerFromMap) {
+                        openAddMarkerFromMapDialog(e);
+                    } else {
+                        android.graphics.Point screenPoint = new android.graphics.Point(
+                                Math.round(e.getX()),
+                                Math.round(e.getY()));
+                        Point mapPoint = mMapView.screenToLocation(screenPoint);
+                        mapClicked(mapPoint);
+                    }
+
                 }
                 return super.onSingleTapConfirmed(e);
             }
@@ -180,13 +185,13 @@ public class MainActivity extends AppCompatActivity {
     }
 
     @Override
-    protected void onPause(){
+    protected void onPause() {
         mMapView.pause();
         super.onPause();
     }
 
     @Override
-    protected void onResume(){
+    protected void onResume() {
         super.onResume();
         mMapView.resume();
     }
@@ -216,14 +221,11 @@ public class MainActivity extends AppCompatActivity {
                 @Override
                 public void run() {
                     try {
-                        Log.d("queryLocator","Busca.");
                         List<GeocodeResult> geocodeResults = geocodeFuture.get();
                         if (geocodeResults.size() > 0) {
                             displaySearchResult(geocodeResults.get(0));
-                            Log.d("queryLocator","Encuentra");
                         } else {
                             Toast.makeText(getApplicationContext(), getString(R.string.nothing_found) + " " + query, Toast.LENGTH_LONG).show();
-                            Log.d("queryLocator","No Encuentra");
                         }
                     } catch (InterruptedException | ExecutionException e) {
                         // ... determine how you want to handle an error
@@ -262,13 +264,14 @@ public class MainActivity extends AppCompatActivity {
                 mGeocodeParameters.setMaxResults(1);
                 mGraphicsOverlay = new GraphicsOverlay();
                 mMapView.getGraphicsOverlays().add(mGraphicsOverlay);
-                Log.d("Init","Cargo el locator");
+                Log.d("Init", "Cargo el locator");
                 progressBar.setVisibility(View.GONE);
+                locatorLoaded = true;
                 desplegarInfoLocator(mLocatorTask);
 
             } else if (mSearchView != null) {
                 mSearchView.setEnabled(false);
-                Log.d("Init","No cargo el locator");
+                Log.d("Init", "No cargo el locator");
             }
         });
         mLocatorTask.loadAsync();
@@ -278,14 +281,12 @@ public class MainActivity extends AppCompatActivity {
         // Get LocatorInfo from a loaded LocatorTask
         LocatorInfo locatorInfo = locatorTask.getLocatorInfo();
         List<String> resultAttributeNames = new ArrayList<>();
-        Log.d("desplegarInfoLocator","desplegarInfoLocator: ");
-        //System.out.print(locatorInfo.getProperties());
 
         // Loop through all the attributes available
         for (LocatorAttribute resultAttribute : locatorInfo.getResultAttributes()) {
             resultAttributeNames.add(resultAttribute.getDisplayName());
             // Use in adapter etc...
-            System.out.print(resultAttribute.getName()+": "+resultAttribute.getDisplayName()+" ");
+            System.out.print(resultAttribute.getName() + ": " + resultAttribute.getDisplayName() + " ");
         }
     }
 
@@ -340,7 +341,9 @@ public class MainActivity extends AppCompatActivity {
         createPolygonGraphics();
     }
 
-    /**Autenticacion**/
+    /**
+     * Autenticacion
+     **/
     private void setupOAuthManager() {
         String clientId = getResources().getString(R.string.client_id);
         String redirectUrl = getResources().getString(R.string.redirect_url);
@@ -362,7 +365,7 @@ public class MainActivity extends AppCompatActivity {
         float markerSize = 8.0f;
         float markerOutlineThickness = 2.0f;
         SimpleMarkerSymbol pointSymbol = new SimpleMarkerSymbol(SimpleMarkerSymbol.Style.DIAMOND, Color.rgb(226, 119, 40), markerSize);
-        pointSymbol.setOutline(new SimpleLineSymbol(SimpleLineSymbol.Style.SOLID,  Color.BLUE, markerOutlineThickness));
+        pointSymbol.setOutline(new SimpleLineSymbol(SimpleLineSymbol.Style.SOLID, Color.BLUE, markerOutlineThickness));
         Graphic pointGraphic = new Graphic(location, pointSymbol);
         mGraphicsOverlay.getGraphics().add(pointGraphic);
     }
@@ -497,7 +500,9 @@ public class MainActivity extends AppCompatActivity {
         mPoint.clear();
         currentPosition = null;
         mGraphicsOverlay.getGraphics().clear();
-        showCurrentPositionHandler.removeCallbacks(runnable);
+        if (showCurrentPositionHandler != null) {
+            showCurrentPositionHandler.removeCallbacks(runnable);
+        }
         hideBottomSheet();
     }
 
@@ -547,7 +552,7 @@ public class MainActivity extends AppCompatActivity {
     private void showAddMarkerFromLatLongDialog() {
         Marker marker = new Marker(0, 0, Marker.REPRESENTATION_WGS84);
         ViewGroup vg = (ViewGroup) findViewById(android.R.id.content);
-        Point point = new Point(0,0);
+        Point point = new Point(0, 0);
         marker.showAddFromLatLongDialog(MainActivity.this, vg, point, markers, new Marker.Viewer.AddMarkerCallback() {
             @Override
             public void onMarkerAdded() {
@@ -564,7 +569,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void showMarkers(List<Marker> markers) {
-        for (Marker m: markers) {
+        for (Marker m : markers) {
             SpatialReference sp = m.getSpatialReference();
             Point marker = new Point(m.lon, m.lat, sp);
             SimpleMarkerSymbol sms = new SimpleMarkerSymbol(SimpleMarkerSymbol.Style.CIRCLE, m.getColor(), 12);
