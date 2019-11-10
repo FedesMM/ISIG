@@ -36,6 +36,8 @@ public class Marker {
     private int color;
     private int representation;
 
+    private int defaultColor = Color.BLACK;
+
     private Viewer.AddMarkerCallback addMarkerCallback;
 
     public Marker(String id, String nombre, double lat, double lon, int representation) {
@@ -44,7 +46,7 @@ public class Marker {
         this.lat = lat;
         this.lon = lon;
         this.representation = representation;
-        this.color = Color.RED;
+        this.color = defaultColor;
     }
 
     public Marker(String id, String nombre, double lon, double lat, int representation, int color) {
@@ -61,7 +63,7 @@ public class Marker {
         this.nombre = "";
         this.lat = lat;
         this.lon = lon;
-        this.color = Color.RED;
+        this.color = defaultColor;
         this.representation = representation;
     }
 

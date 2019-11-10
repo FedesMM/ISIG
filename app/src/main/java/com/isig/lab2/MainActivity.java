@@ -68,6 +68,7 @@ import java.util.concurrent.ExecutionException;
 import com.google.gson.Gson;
 import com.isig.lab2.models.Marker;
 import com.isig.lab2.models.Path;
+import com.isig.lab2.models.RoutePointRequestModel;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -81,6 +82,9 @@ public class MainActivity extends AppCompatActivity {
     private boolean addMarkerFromMap = false;
     private BottomSheetBehavior bottomSheetBehavior;
     private Graphic currentPosition;
+    private Handler showCurrentPositionHandler;
+    private Runnable runnable;
+    private RoutePointRequestModel request;
 
     //Busqueda por categoria
     private GraphicsOverlay graphicsOverlay;
@@ -294,7 +298,7 @@ public class MainActivity extends AppCompatActivity {
     private void createPointGraphics() {
         Point point = new Point(-118.69333917997633, 34.032793670122885, SpatialReferences.getWgs84());
         SimpleMarkerSymbol pointSymbol = new SimpleMarkerSymbol(SimpleMarkerSymbol.Style.CIRCLE, Color.rgb(226, 119, 40), 10.0f);
-        pointSymbol.setOutline(new SimpleLineSymbol(SimpleLineSymbol.Style.SOLID, Color.BLUE, 2.0f));
+        pointSymbol.setOutline(new SimpleLineSymbol(SimpleLineSymbol.Style.SOLID, Color.BLUE, 1.5f));
         Graphic pointGraphic = new Graphic(point, pointSymbol);
         mGraphicsOverlay.getGraphics().add(pointGraphic);
     }
@@ -427,31 +431,40 @@ public class MainActivity extends AppCompatActivity {
                     List<Marker> points = path.getPoints();
                     Log.d("path.getPoints", " size " + points.size());
 
-                    showPosition(points);
+                    if (!points.isEmpty()) {
+                        int adequateSpeed = 50;
+                        request = new RoutePointRequestModel(points, 0, adequateSpeed, 1);
+                        request.resultMarker = points.get(0);
+                        showPointByInterval(request);
+                    }
                 }
             }
         }
     }
 
-    private void showPosition(List<Marker> points) {
-        List<Marker> markers = Path.pointsInPath(new ArrayList<>(points), 50, 1);
-        showPointByInterval(markers,1000);
+    private void showPointByInterval(RoutePointRequestModel request) {
+        if (request.resultMarker != null) {
+            showCurrentPositionHandler = new Handler();
+            runnable = () -> {
+                showPosition(request.resultMarker);
+                showPointByInterval(Path.nextPoint(request));
+            };
+            showCurrentPositionHandler.postDelayed(runnable, request.getRefreshRate());
+        }
     }
 
-    private void showPointByInterval(List<Marker> list, int interval) {
-        if (!list.isEmpty()) {
-            new Handler().postDelayed(() -> {
-                Marker marker = list.get(0);
+    private void showPosition(Marker m) {
+        Log.d("showPosition: ", m.lat + " " + m.lon);
 
-                Marker m = new Marker("", "", marker.lon, marker.lat, Marker.REPRESENTATION_WGS84, Color.WHITE);
-                showPosition(m);
-
-                Log.d("showPosition: ", marker.lat + " " + marker.lon);
-
-                list.remove(0);
-                showPointByInterval(list, interval);
-            }, interval);
+        SpatialReference sp = m.getSpatialReference();
+        Point marker = new Point(m.lon, m.lat, sp);
+        SimpleMarkerSymbol sms = new SimpleMarkerSymbol(SimpleMarkerSymbol.Style.DIAMOND, m.getColor(), 12);
+        Graphic g = new Graphic(marker, sms);
+        mGraphicsOverlay.getGraphics().add(g);
+        if (mGraphicsOverlay.getGraphics().contains(g)) {
+            mGraphicsOverlay.getGraphics().remove(currentPosition);
         }
+        currentPosition = g;
     }
 
     @OnClick(R.id.text_cancel_create_sheet)
@@ -484,6 +497,7 @@ public class MainActivity extends AppCompatActivity {
         mPoint.clear();
         currentPosition = null;
         mGraphicsOverlay.getGraphics().clear();
+        showCurrentPositionHandler.removeCallbacks(runnable);
         hideBottomSheet();
     }
 
@@ -557,18 +571,6 @@ public class MainActivity extends AppCompatActivity {
             Graphic g = new Graphic(marker, sms);
             mGraphicsOverlay.getGraphics().add(g);
         }
-    }
-
-    private void showPosition(Marker m) {
-        SpatialReference sp = m.getSpatialReference();
-        Point marker = new Point(m.lon, m.lat, sp);
-        SimpleMarkerSymbol sms = new SimpleMarkerSymbol(SimpleMarkerSymbol.Style.CIRCLE, m.getColor(), 12);
-        Graphic g = new Graphic(marker, sms);
-        mGraphicsOverlay.getGraphics().add(g);
-        if (mGraphicsOverlay.getGraphics().contains(g)) {
-            mGraphicsOverlay.getGraphics().remove(currentPosition);
-        }
-        currentPosition = g;
     }
 }
 
