@@ -40,11 +40,11 @@ public class Marker {
 
     private Viewer.AddMarkerCallback addMarkerCallback;
 
-    public Marker(String id, String nombre, double lat, double lon, int representation) {
+    public Marker(String id, String nombre, double lon, double lat, int representation) {
         this.id = id;
         this.nombre = nombre;
-        this.lat = lat;
         this.lon = lon;
+        this.lat = lat;
         this.representation = representation;
         this.color = defaultColor;
     }
@@ -52,8 +52,8 @@ public class Marker {
     public Marker(String id, String nombre, double lon, double lat, int representation, int color) {
         this.id = id;
         this.nombre = nombre;
-        this.lat = lat;
         this.lon = lon;
+        this.lat = lat;
         this.representation = representation;
         this.color = color;
     }
@@ -61,8 +61,8 @@ public class Marker {
     public Marker(double lon, double lat, int representation) {
         this.id = "";
         this.nombre = "";
-        this.lat = lat;
         this.lon = lon;
+        this.lat = lat;
         this.color = defaultColor;
         this.representation = representation;
     }
@@ -129,7 +129,7 @@ public class Marker {
         ADClose.show();
     }
 
-    public static double LotLong2Km(Marker org, Marker dst) {
+    public static double LatLong2Km(Marker org, Marker dst) {
         if ((org.lat == dst.lat) && (org.lon == dst.lon)) {
             return 0;
         } else {

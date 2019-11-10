@@ -431,13 +431,15 @@ public class MainActivity extends AppCompatActivity {
                 Path path = new Gson().fromJson(g.getGeometry().getInternal().w(), Path.class);
                 if (path.getPaths() != null && path.getPaths().length > 0) {
                     Log.d("Graphic " + i, ", " + g.getGeometry().getInternal().w());
-                    List<Marker> points = path.getPoints();
-                    Log.d("path.getPoints", " size " + points.size());
+                    List<Marker> markerPoints = path.getPoints();
+                    Log.d("path.getPoints", " size " + markerPoints.size());
 
-                    if (!points.isEmpty()) {
-                        int adequateSpeed = 50;
-                        request = new RoutePointRequestModel(points, 0, adequateSpeed, 1);
-                        request.resultMarker = points.get(0);
+                    if (!markerPoints.isEmpty()) {
+                        double distTotal = Path.largoCaminoEnKm(markerPoints);
+                        int[] speeds = Path.getSpeeds(distTotal);
+                        int adequateSpeed = speeds[Path.getMediumSpeedIndex()];
+                        request = new RoutePointRequestModel(markerPoints, 0, adequateSpeed, 1);
+                        request.resultMarker = markerPoints.get(0);
                         showPointByInterval(request);
                     }
                 }

@@ -11,7 +11,7 @@ public class Path {
     public static double MIN_TOUR_TRAVEL = 20;
     public static double MED_TOUR_TRAVEL = 60;
     public static double MAX_TOUR_TRAVEL = 200;
-    public static int TOUR_TRAVEL_INTERVALS = 7;
+    public static int TOUR_TRAVEL_INTERVALS = 7; // siempre IMPAR
 
     private boolean hasM;
     private double[][][] paths;
@@ -47,6 +47,10 @@ public class Path {
         this.spatialReference = spatialReference;
     }
 
+    public static int getMediumSpeedIndex() {
+        return (TOUR_TRAVEL_INTERVALS-1)/2;
+    }
+
     public List<Marker> getPoints() {
         List<Marker> list = new ArrayList<>();
         list.add(new Marker(getPaths()[0][0][0], getPaths()[0][0][1], Marker.REPRESENTATION_WGS84));
@@ -76,6 +80,16 @@ public class Path {
             return new Marker(0,0, Marker.REPRESENTATION_WGS84);
     }
 
+    public static double largoCaminoEnKm(List<Marker> markers) {
+        double dist = 0;
+        if (!markers.isEmpty() && markers.size() > 1) {
+            for (int i = 0; i < markers.size() - 1; i++) {
+                dist = dist + Marker.LatLong2Km(markers.get(i), markers.get(i+1));
+            }
+        }
+        return dist;
+    }
+
     public static RoutePointRequestModel nextPoint(RoutePointRequestModel request) {
         if (request.list == null || request.list.size() == 0) {
             request.resultMarker = null;
@@ -87,7 +101,7 @@ public class Path {
         } else {
             Marker org = request.list.get(0);
             Marker dst = request.list.get(1);
-            double distPuntos = Marker.LotLong2Km(org, dst);
+            double distPuntos = Marker.LatLong2Km(org, dst);
             if (distPuntos < request.distAcumulada) {
                 request.list.remove(0);
                 request.distAcumulada = request.distAcumulada - distPuntos;
@@ -114,7 +128,7 @@ public class Path {
 
     public static int[] getSpeeds(double distance) {
         int[] res = new int[TOUR_TRAVEL_INTERVALS];
-        int med = (TOUR_TRAVEL_INTERVALS-1)/2;
+        int med = getMediumSpeedIndex();
         double speed = 3600 * distance;
         res[0] = (int) (speed / MIN_TOUR_TRAVEL);
         res[TOUR_TRAVEL_INTERVALS-1] = (int) (speed / MAX_TOUR_TRAVEL);
