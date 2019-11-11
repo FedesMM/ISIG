@@ -58,6 +58,7 @@ import android.view.MenuItem;
 import android.widget.ProgressBar;
 import android.widget.SearchView;
 import android.view.ViewGroup;
+import android.widget.SeekBar;
 import android.widget.Toast;
 
 import java.net.MalformedURLException;
@@ -86,6 +87,7 @@ public class MainActivity extends AppCompatActivity {
     private Handler showCurrentPositionHandler;
     private Runnable runnable;
     private RoutePointRequestModel request;
+    private double distTotal = 0;
 
     //Busqueda por categoria
     private GraphicsOverlay graphicsOverlay;
@@ -98,6 +100,7 @@ public class MainActivity extends AppCompatActivity {
     @BindView(R.id.fab) FloatingActionButton fab;
     @BindView(R.id.toolbar) Toolbar toolbar;
     @BindView(R.id.progress_bar) ProgressBar progressBar;
+    @BindView(R.id.speedSeekBar) SeekBar speedSeekBar;
 
     @SuppressLint("ClickableViewAccessibility")
     @Override
@@ -143,6 +146,22 @@ public class MainActivity extends AppCompatActivity {
                 }
                 return super.onSingleTapConfirmed(e);
             }
+        });
+
+        speedSeekBar.setMax(Path.TOUR_TRAVEL_INTERVALS-1);
+        speedSeekBar.setProgress(Path.getMediumSpeedIndex());
+        speedSeekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override
+            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                if (request != null && distTotal > 0) {
+                    Log.d("onProgressChanged", "progress: " + progress + ", speed: " + Path.getSpeeds(distTotal)[Path.TOUR_TRAVEL_INTERVALS-progress]);
+                    request.speed = Path.getSpeeds(distTotal)[Path.TOUR_TRAVEL_INTERVALS-progress];
+                }
+            }
+            @Override
+            public void onStartTrackingTouch(SeekBar seekBar) {}
+            @Override
+            public void onStopTrackingTouch(SeekBar seekBar) {}
         });
 
         createGraphicsOverlay();
@@ -435,7 +454,7 @@ public class MainActivity extends AppCompatActivity {
                     Log.d("path.getPoints", " size " + markerPoints.size());
 
                     if (!markerPoints.isEmpty()) {
-                        double distTotal = Path.largoCaminoEnKm(markerPoints);
+                        distTotal = Path.largoCaminoEnKm(markerPoints);
                         int[] speeds = Path.getSpeeds(distTotal);
                         int adequateSpeed = speeds[Path.getMediumSpeedIndex()];
                         request = new RoutePointRequestModel(markerPoints, 0, adequateSpeed, 1);

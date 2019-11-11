@@ -13,6 +13,8 @@ public class Path {
     public static double MAX_TOUR_TRAVEL = 200;
     public static int TOUR_TRAVEL_INTERVALS = 7; // siempre IMPAR
 
+    public static int[] speeds = null;
+
     private boolean hasM;
     private double[][][] paths;
     private Map<String, Integer> spatialReference;
@@ -127,22 +129,25 @@ public class Path {
     }
 
     public static int[] getSpeeds(double distance) {
-        int[] res = new int[TOUR_TRAVEL_INTERVALS];
-        int med = getMediumSpeedIndex();
-        double speed = 3600 * distance;
-        res[0] = (int) (speed / MIN_TOUR_TRAVEL);
-        res[TOUR_TRAVEL_INTERVALS-1] = (int) (speed / MAX_TOUR_TRAVEL);
-        for (int i = 1; i < TOUR_TRAVEL_INTERVALS-1; i++) {
-            if (i < med) {
-                double ratio = (double) i / (double) med;
-                res[i] = (int) (speed / MIN_TOUR_TRAVEL) + (int) Math.round(((speed / MED_TOUR_TRAVEL) - (speed / MIN_TOUR_TRAVEL)) * ratio);
-            } else if (i > med) {
-                double ratio = (double) (i - med) / (double) med ;
-                res[i] = (int) (speed / MED_TOUR_TRAVEL) + (int) Math.round(((speed / MAX_TOUR_TRAVEL) - (speed / MED_TOUR_TRAVEL)) * ratio);
-            } else {
-                res[i] = (int) (speed / MED_TOUR_TRAVEL);
+        if (speeds == null || speeds.length != TOUR_TRAVEL_INTERVALS) {
+            int[] res = new int[TOUR_TRAVEL_INTERVALS];
+            int med = getMediumSpeedIndex();
+            double speed = 3600 * distance;
+            res[0] = (int) (speed / MIN_TOUR_TRAVEL);
+            res[TOUR_TRAVEL_INTERVALS - 1] = (int) (speed / MAX_TOUR_TRAVEL);
+            for (int i = 1; i < TOUR_TRAVEL_INTERVALS - 1; i++) {
+                if (i < med) {
+                    double ratio = (double) i / (double) med;
+                    res[i] = (int) (speed / MIN_TOUR_TRAVEL) + (int) Math.round(((speed / MED_TOUR_TRAVEL) - (speed / MIN_TOUR_TRAVEL)) * ratio);
+                } else if (i > med) {
+                    double ratio = (double) (i - med) / (double) med;
+                    res[i] = (int) (speed / MED_TOUR_TRAVEL) + (int) Math.round(((speed / MAX_TOUR_TRAVEL) - (speed / MED_TOUR_TRAVEL)) * ratio);
+                } else {
+                    res[i] = (int) (speed / MED_TOUR_TRAVEL);
+                }
             }
+            speeds = res;
         }
-        return res;
+        return speeds;
     }
 }
