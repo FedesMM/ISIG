@@ -155,7 +155,7 @@ public class MainActivity extends AppCompatActivity {
             public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
                 if (request != null && distTotal > 0) {
                     Log.d("onProgressChanged", "progress: " + progress + ", speed: " + Path.getSpeeds(distTotal)[Path.TOUR_TRAVEL_INTERVALS-progress]);
-                    request.speed = Path.getSpeeds(distTotal)[Path.TOUR_TRAVEL_INTERVALS-progress];
+                    request.speed = Path.getSpeedByIndex(distTotal, progress);
                 }
             }
             @Override
@@ -457,6 +457,9 @@ public class MainActivity extends AppCompatActivity {
                         distTotal = Path.largoCaminoEnKm(markerPoints);
                         int[] speeds = Path.getSpeeds(distTotal);
                         int adequateSpeed = speeds[Path.getMediumSpeedIndex()];
+                        if (speedSeekBar != null) {
+                            adequateSpeed = Path.getSpeedByIndex(distTotal, speedSeekBar.getProgress());
+                        }
                         request = new RoutePointRequestModel(markerPoints, 0, adequateSpeed, 1);
                         request.resultMarker = markerPoints.get(0);
                         showPointByInterval(request);

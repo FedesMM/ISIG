@@ -150,4 +150,8 @@ public class Path {
         }
         return speeds;
     }
+
+    public static int getSpeedByIndex(double distTotal, int index) {
+        return Path.getSpeeds(distTotal)[Path.TOUR_TRAVEL_INTERVALS-index];
+    }
 }
