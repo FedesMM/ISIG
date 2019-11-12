@@ -19,7 +19,7 @@
             android:layout_height="wrap_content"
             android:textAlignment="center"
             android:textSize="25sp"
-            android:text="@string/marcador"
+            android:text="@string/add_marker"
             android:layout_margin="15dp"/>
 
         <LinearLayout

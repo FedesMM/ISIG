@@ -50,11 +50,12 @@
             android:layout_weight="17"
             android:background="@color/light_grey"
             android:layout_gravity="start|bottom"
-            android:padding="12dp"
+            android:padding="10dp"
             android:layout_marginStart="10dp"
             android:layout_marginEnd="10dp"
             android:layout_marginTop="10dp"
-            android:layout_marginBottom="14dp"/>
+            android:layout_marginBottom="14dp"
+            android:visibility="invisible"/>
 
         <com.google.android.material.floatingactionbutton.FloatingActionButton
             android:id="@+id/fab"

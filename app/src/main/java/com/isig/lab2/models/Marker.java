@@ -103,7 +103,7 @@ public class Marker {
                 this.lon = point.getX();
                 markers.add(this);
                 ADClose.dismiss();
-                addMarkerCallback.onMarkerAdded();
+                addMarkerCallback.onMarkerAdded(this);
             } else {
                 final EditText latMarker = viewInflated.findViewById(R.id.lat_marcador);
                 final EditText longMarker = viewInflated.findViewById(R.id.long_marcador);
@@ -114,7 +114,7 @@ public class Marker {
                         this.lon = Float.parseFloat(longMarker.getText().toString());
                         markers.add(this);
                         ADClose.dismiss();
-                        addMarkerCallback.onMarkerAdded();
+                        addMarkerCallback.onMarkerAdded(this);
                     } catch (Exception e) {
                         e.printStackTrace();
                         Toast.makeText(context, context.getString(R.string.error_parsing_lat), Toast.LENGTH_LONG).show();
@@ -187,7 +187,7 @@ public class Marker {
 
     public interface Viewer {
         interface AddMarkerCallback {
-            void onMarkerAdded();
+            void onMarkerAdded(Marker marker);
             void onMarkerAddingCanceled();
         }
     }

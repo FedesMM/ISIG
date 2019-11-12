@@ -152,6 +152,6 @@ public class Path {
     }
 
     public static int getSpeedByIndex(double distTotal, int index) {
-        return Path.getSpeeds(distTotal)[Path.TOUR_TRAVEL_INTERVALS-index];
+        return Path.getSpeeds(distTotal)[Path.TOUR_TRAVEL_INTERVALS-index-1];
     }
 }

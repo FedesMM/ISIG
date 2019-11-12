@@ -8,7 +8,8 @@
     <string name="nothing_found">Nothing found for</string>
 
     <!-- *** Puntos *** -->
-    <string name="marcador">Punto</string>
+    <string name="add_marker">Agregar punto</string>
+    <string name="clear_points">Borrar Puntos</string>
     <string name="nombre">Nombre:</string>
     <string name="latitud">Latitud:</string>
     <string name="longitud">Longitud:</string>
@@ -18,10 +19,27 @@
     <string name="add_marker_from_map">Agregar Punto en Mapa</string>
     <string name="add_marker_from_latlong">Agregar Punto por Lat/Long</string>
     <string name="marker_added">Punto agregado</string>
+
     <string name="error_parsing_lat">Error al parsear la latitud</string>
     <string name="error_parsing_long">Error al parsear la longitud</string>
-    <string name="find_route">Encontrar ruta mas corta</string>
-    <string name="clear_route">Limpiar rutas</string>
+
+    <!-- *** Rutas ***-->
+    <string name="routes">Rutas</string>
+    <string name="create_route">Crear Ruta</string>
+    <string name="load_routes">Cargar Rutas</string>
+    <string name="clear_route">Borrar rutas</string>
+
+    <string name="simulate_tour">Simular Recorrido</string>
+
+    <!-- *** Configuración ***-->
+    <string name="config">Configuración</string>
+    <string name="ruta_mas_corta">Buscar la ruta más corta entre todos los puntos</string>
+    <string name="config_saved">Configuración Guardada</string>
+
+    <!-- *** Server URLs ***-->
+    <string name="url_server_puntos">http://sampleserver5.arcgisonline.com/arcgis/rest/services/LocalGovernment/Events/FeatureServer/0</string>
+    <string name="url_server_busqueda">http://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer</string>
+    <string name="page_url">"https://www.arcgis.com"</string>
 
     <!-- Lat Long -->
     <string name="no_lat_long"> - </string>

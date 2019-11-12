@@ -7,13 +7,18 @@ import android.content.Intent;
 import android.graphics.Color;
 import android.os.Bundle;
 
+import com.esri.arcgisruntime.ArcGISRuntimeException;
 import com.esri.arcgisruntime.concurrent.ListenableFuture;
+import com.esri.arcgisruntime.data.Feature;
+import com.esri.arcgisruntime.data.FeatureEditResult;
+import com.esri.arcgisruntime.data.FeatureQueryResult;
+import com.esri.arcgisruntime.data.QueryParameters;
+import com.esri.arcgisruntime.data.ServiceFeatureTable;
+import com.esri.arcgisruntime.geometry.Envelope;
 import com.esri.arcgisruntime.geometry.Point;
-import com.esri.arcgisruntime.geometry.PointCollection;
-import com.esri.arcgisruntime.geometry.Polygon;
 import com.esri.arcgisruntime.geometry.Polyline;
-import com.esri.arcgisruntime.geometry.SpatialReferences;
 import com.esri.arcgisruntime.geometry.SpatialReference;
+import com.esri.arcgisruntime.layers.FeatureLayer;
 import com.esri.arcgisruntime.loadable.LoadStatus;
 import com.esri.arcgisruntime.mapping.ArcGISMap;
 import com.esri.arcgisruntime.mapping.Basemap;
@@ -24,7 +29,6 @@ import com.esri.arcgisruntime.mapping.view.MapView;
 import com.esri.arcgisruntime.security.AuthenticationManager;
 import com.esri.arcgisruntime.security.DefaultAuthenticationChallengeHandler;
 import com.esri.arcgisruntime.security.OAuthConfiguration;
-import com.esri.arcgisruntime.symbology.SimpleFillSymbol;
 import com.esri.arcgisruntime.symbology.SimpleLineSymbol;
 import com.esri.arcgisruntime.symbology.SimpleMarkerSymbol;
 import com.esri.arcgisruntime.symbology.TextSymbol;
@@ -63,37 +67,53 @@ import android.widget.Toast;
 
 import java.net.MalformedURLException;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ExecutionException;
 
 import com.google.gson.Gson;
+import com.isig.lab2.models.Configuration;
 import com.isig.lab2.models.Marker;
 import com.isig.lab2.models.Path;
 import com.isig.lab2.models.RoutePointRequestModel;
 
 public class MainActivity extends AppCompatActivity {
 
+    private static String CLAVE_BUSQUEDA ="Description";
+    private static String VALOR_BUSQUEDA ="Grupo 3";
+
     //Georeferenciacion
     private SearchView mSearchView = null;
+    private boolean locatorLoaded = false;
+
+    private FeatureLayer featureLayer;
+    private ServiceFeatureTable serviceFeatureTable;
     private GraphicsOverlay mGraphicsOverlay;
     private LocatorTask mLocatorTask = null;
     private GeocodeParameters mGeocodeParameters = new GeocodeParameters();
-    private boolean locatorLoaded = false;
 
     private List<Marker> markers = new ArrayList<>();
-    private boolean addMarkerFromMap = false;
+    private boolean addMarkerFromMap = true;
     private BottomSheetBehavior bottomSheetBehavior;
+
     private Graphic currentPosition;
     private Handler showCurrentPositionHandler;
     private Runnable runnable;
     private RoutePointRequestModel request;
     private double distTotal = 0;
+    private boolean findBestSequenceForRoute = false;
+    private boolean isSimulatingTour = false;
+
+    private Configuration configuration = new Configuration();
 
     //Busqueda por categoria
     private GraphicsOverlay graphicsOverlay;
-    private LocatorTask locator = new LocatorTask("http://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer");
+    //private LocatorTask locator = new LocatorTask(getString(R.string.url_server_busqueda));
+
     //Ruta mas corta
-    private List<Point> mPoint = new ArrayList<>();
+    private List<Point> selectedPoints = new ArrayList<>();
 
     @BindView(R.id.mapView) MapView mMapView;
     @BindView(R.id.bottom_sheet_markers) View bottomSheetMarkers;
@@ -114,20 +134,19 @@ public class MainActivity extends AppCompatActivity {
 
         fab.setOnClickListener(view -> showBottomSheet(bottomSheetMarkers));
 
-        /**Autenticacion**/
+        // *** Autenticacion ***
         setupOAuthManager();
 
-        ArcGISMap map = new ArcGISMap(Basemap.Type.TOPOGRAPHIC, -34.726272, -56.227631, 16);
+        // set up map
+        ArcGISMap map = new ArcGISMap(Basemap.Type.STREETS_VECTOR, -34.726272, -56.227631, 16);
+        serviceFeatureTable = new ServiceFeatureTable(getString(R.string.url_server_puntos));
+        featureLayer = new FeatureLayer(serviceFeatureTable);
+        map.getOperationalLayers().add(featureLayer);
         mMapView.setMap(map);
 
         // *** Georeferenciacion ***
         setupLocator();
 
-        //*Desplegar punto, linea y poligono*//
-        //createGraphics();
-        /**Autenticacion**/
-        //ArcGISMapImageLayer traffic = new ArcGISMapImageLayer(getResources().getString(R.string.traffic_service));
-        //map.getOperationalLayers().add(traffic);
         /**Ruta mas corta**/
         mMapView.setOnTouchListener(new DefaultMapViewOnTouchListener(this, mMapView) {
             @Override
@@ -140,21 +159,27 @@ public class MainActivity extends AppCompatActivity {
                                 Math.round(e.getX()),
                                 Math.round(e.getY()));
                         Point mapPoint = mMapView.screenToLocation(screenPoint);
-                        mapClicked(mapPoint);
+                        //mapClicked(mapPoint);
+                        addFeature(mapPoint);
                     }
-
                 }
                 return super.onSingleTapConfirmed(e);
             }
         });
 
+        setSpeedSeekBar();
+
+        createGraphicsOverlay();
+    }
+
+    private void setSpeedSeekBar() {
         speedSeekBar.setMax(Path.TOUR_TRAVEL_INTERVALS-1);
         speedSeekBar.setProgress(Path.getMediumSpeedIndex());
         speedSeekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override
             public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
                 if (request != null && distTotal > 0) {
-                    Log.d("onProgressChanged", "progress: " + progress + ", speed: " + Path.getSpeeds(distTotal)[Path.TOUR_TRAVEL_INTERVALS-progress]);
+                    Log.d("onProgressChanged", "progress: " + progress + ", speed: " + Path.getSpeeds(distTotal)[Path.TOUR_TRAVEL_INTERVALS-progress-1]);
                     request.speed = Path.getSpeedByIndex(distTotal, progress);
                 }
             }
@@ -163,10 +188,6 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onStopTrackingTouch(SeekBar seekBar) {}
         });
-
-        createGraphicsOverlay();
-        //*Desplegar punto, linea y poligono*//
-        //createGraphics();
     }
 
     @Override
@@ -315,60 +336,13 @@ public class MainActivity extends AppCompatActivity {
         mMapView.getGraphicsOverlays().add(mGraphicsOverlay);
     }
 
-    private void createPointGraphics() {
-        Point point = new Point(-118.69333917997633, 34.032793670122885, SpatialReferences.getWgs84());
-        SimpleMarkerSymbol pointSymbol = new SimpleMarkerSymbol(SimpleMarkerSymbol.Style.CIRCLE, Color.rgb(226, 119, 40), 10.0f);
-        pointSymbol.setOutline(new SimpleLineSymbol(SimpleLineSymbol.Style.SOLID, Color.BLUE, 1.5f));
-        Graphic pointGraphic = new Graphic(point, pointSymbol);
-        mGraphicsOverlay.getGraphics().add(pointGraphic);
-    }
-
-    private void createPolylineGraphics() {
-        PointCollection polylinePoints = new PointCollection(SpatialReferences.getWgs84());
-        polylinePoints.add(new Point(-118.67999016098526, 34.035828839974684));
-        polylinePoints.add(new Point(-118.65702911071331, 34.07649252525452));
-        Polyline polyline = new Polyline(polylinePoints);
-        SimpleLineSymbol polylineSymbol = new SimpleLineSymbol(SimpleLineSymbol.Style.SOLID, Color.BLUE, 3.0f);
-        Graphic polylineGraphic = new Graphic(polyline, polylineSymbol);
-        mGraphicsOverlay.getGraphics().add(polylineGraphic);
-    }
-
-    private void createPolygonGraphics() {
-        PointCollection polygonPoints = new PointCollection(SpatialReferences.getWgs84());
-        polygonPoints.add(new Point(-118.70372100524446, 34.03519536420519));
-        polygonPoints.add(new Point(-118.71766916267414, 34.03505116445459));
-        polygonPoints.add(new Point(-118.71923322580597, 34.04919407570509));
-        polygonPoints.add(new Point(-118.71631129436038, 34.04915962906471));
-        polygonPoints.add(new Point(-118.71526020370266, 34.059921300916244));
-        polygonPoints.add(new Point(-118.71153226844807, 34.06035488360282));
-        polygonPoints.add(new Point(-118.70803735010169, 34.05014385296186));
-        polygonPoints.add(new Point(-118.69877903513455, 34.045182336992816));
-        polygonPoints.add(new Point(-118.6979656552508, 34.040267760924316));
-        polygonPoints.add(new Point(-118.70259112469694, 34.038800278306674));
-        polygonPoints.add(new Point(-118.70372100524446, 34.03519536420519));
-        Polygon polygon = new Polygon(polygonPoints);
-        SimpleFillSymbol polygonSymbol = new SimpleFillSymbol(SimpleFillSymbol.Style.SOLID, Color.rgb(226, 119, 40),
-                new SimpleLineSymbol(SimpleLineSymbol.Style.SOLID, Color.BLUE, 2.0f));
-        Graphic polygonGraphic = new Graphic(polygon, polygonSymbol);
-        mGraphicsOverlay.getGraphics().add(polygonGraphic);
-    }
-
-    private void createGraphics() {
-        createGraphicsOverlay();
-        createPointGraphics();
-        createPolylineGraphics();
-        createPolygonGraphics();
-    }
-
     /**
      * Autenticacion
      **/
     private void setupOAuthManager() {
-        String clientId = getResources().getString(R.string.client_id);
-        String redirectUrl = getResources().getString(R.string.redirect_url);
-
         try {
-            OAuthConfiguration oAuthConfiguration = new OAuthConfiguration("https://www.arcgis.com", clientId, redirectUrl);
+            OAuthConfiguration oAuthConfiguration =
+                    new OAuthConfiguration(getString(R.string.page_url), getString(R.string.client_id), getString(R.string.redirect_url));
             DefaultAuthenticationChallengeHandler authenticationChallengeHandler = new DefaultAuthenticationChallengeHandler(this);
             AuthenticationManager.setAuthenticationChallengeHandler(authenticationChallengeHandler);
             AuthenticationManager.addOAuthConfiguration(oAuthConfiguration);
@@ -377,9 +351,101 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    public void addFeature(Point mapPoint) {
+        selectedPoints.add(mapPoint);
+
+        Map<String, Object> attributes = new HashMap<>();
+        attributes.put("Description", VALOR_BUSQUEDA); // Coded Values: [1: Manatee] etc...
+        attributes.put("Event Website",VALOR_BUSQUEDA); // Coded Values: [0: No] , [1: Yes]
+        attributes.put("Recommend Attending", "Yes");
+        attributes.put("Event_Type", 1);
+
+        // Create a new feature from the attributes and an existing point geometry, and then add the feature
+        Feature addedFeature = serviceFeatureTable.createFeature(attributes, mapPoint);
+        final ListenableFuture<Void> addFeatureFuture = serviceFeatureTable.addFeatureAsync(addedFeature);
+        addFeatureFuture.addDoneListener(() -> {
+            try {
+                addFeatureFuture.get();
+
+                // apply the edits
+                final ListenableFuture<List<FeatureEditResult>> applyEditsFuture = serviceFeatureTable.applyEditsAsync();
+                applyEditsFuture.addDoneListener(() -> {
+                    try {
+                        final List<FeatureEditResult> featureEditResults = applyEditsFuture.get();
+                        // if required, can check the edits applied in this operation
+                        Log.d("Number of edits", "" + featureEditResults.size());
+                    } catch (InterruptedException | ExecutionException e) {
+                        e.printStackTrace();
+                    }
+                });
+
+            } catch (InterruptedException | ExecutionException e) {
+                if (e.getCause() instanceof ArcGISRuntimeException) {
+                    ArcGISRuntimeException agsEx = (ArcGISRuntimeException)e.getCause();
+                    Log.d("Add Feature Error", agsEx.getErrorCode() + "\n=" + agsEx.getMessage());
+                } else {
+                    e.printStackTrace();
+                }
+            }
+        });
+    }
+
+    private void buscarNuestrosPuntos(String key, String value) {
+        featureLayer.clearSelection();
+
+        QueryParameters query = new QueryParameters();
+        query.setWhereClause("upper("+key+") LIKE '%" + value+ "%'");
+        final ListenableFuture<FeatureQueryResult> future = serviceFeatureTable.queryFeaturesAsync(query);
+        future.addDoneListener(() -> {
+            try {
+                FeatureQueryResult result = future.get();
+                Iterator<Feature> resultIteratorPrueba = result.iterator();
+                if (resultIteratorPrueba.hasNext()) {
+                    for (Feature feature : result) {
+                        Envelope envelope = feature.getGeometry().getExtent();
+                        mMapView.setViewpointGeometryAsync(envelope, 10);
+                        featureLayer.selectFeature(feature);
+                    }
+                } else {
+                    Toast.makeText(this, "No encuentra puntos con Descripcion: " + "Grupo 3", Toast.LENGTH_LONG).show();
+                    Log.e("buscarNuestrosPuntos", "No encuentra puntos con "+key+": " + value);
+                }
+            } catch (Exception e) {
+                String error = "Feature search failed for: " + "Grupo 3" + ". Error: " + e.getMessage();
+                Toast.makeText(this, error, Toast.LENGTH_LONG).show();
+                Log.e("buscarNuestrosPuntos", error);
+            }
+        });
+    }
+
+    private void eliminarNuestrosPuntos(String key, String value) {
+        featureLayer.clearSelection();
+
+        QueryParameters query = new QueryParameters();
+        query.setWhereClause("upper("+key+") LIKE '%" + value+ "%'");
+        final ListenableFuture<FeatureQueryResult> future = serviceFeatureTable.queryFeaturesAsync(query);
+        future.addDoneListener(() -> {
+            try {
+                FeatureQueryResult result = future.get();
+                Iterator<Feature> resultIteratorPrueba = result.iterator();
+                if (resultIteratorPrueba.hasNext()) {
+                    serviceFeatureTable.deleteFeaturesAsync(result).get();
+                    final List<FeatureEditResult> featureEditResults = serviceFeatureTable.applyEditsAsync().get();
+                } else {
+                    Toast.makeText(this, "No encuentra puntos con Descripcion: " + "Grupo 3", Toast.LENGTH_LONG).show();
+                    Log.e("eliminarNuestrosPuntos", "No encuentra puntos con "+key+": " + value);
+                }
+            } catch (Exception e) {
+                String error = "Feature search failed for: " + "Grupo 3" + ". Error: " + e.getMessage();
+                Toast.makeText(this, error, Toast.LENGTH_LONG).show();
+                Log.e("eliminarNuestrosPuntos", error);
+            }
+        });
+    }
+
     //Ruta mas corta
     private void mapClicked(Point location) {
-        mPoint.add(location);
+        selectedPoints.add(location);
 
         float markerSize = 8.0f;
         float markerOutlineThickness = 2.0f;
@@ -404,10 +470,10 @@ public class MainActivity extends AppCompatActivity {
                 routeParamsFuture.addDoneListener(() -> {
                     try {
                         RouteParameters routeParameters = routeParamsFuture.get();
-                        routeParameters.setFindBestSequence(false); // TODO: Reorder or not for min length path
+                        routeParameters.setFindBestSequence(findBestSequenceForRoute);
                         List<Stop> stops = new ArrayList<>();
-                        for (int i = 0; i < mPoint.size(); i++) {
-                            stops.add(new Stop(mPoint.get(i)));
+                        for (int i = 0; i < selectedPoints.size(); i++) {
+                            stops.add(new Stop(selectedPoints.get(i)));
                         }
                         routeParameters.setStops(stops);
                         // Code from the next step goes here
@@ -422,8 +488,6 @@ public class MainActivity extends AppCompatActivity {
                                 SimpleLineSymbol routeSymbol = new SimpleLineSymbol(SimpleLineSymbol.Style.SOLID, Color.BLUE, 4.0f);
                                 Graphic routeGraphic = new Graphic(routePolyline, routeSymbol);
                                 mGraphicsOverlay.getGraphics().add(routeGraphic);
-
-                                getPointsFromMap();
 
                             } catch (InterruptedException | ExecutionException e) {
                                 showError("Solve RouteTask failed " + e.getMessage());
@@ -441,6 +505,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void getPointsFromMap() {
+        speedSeekBar.setVisibility(View.VISIBLE);
         Log.d("mGraphicsOverlay size", mGraphicsOverlay.getGraphics().size() + " ");
 
         for (int i = 0; i < mGraphicsOverlay.getGraphics().size(); i++) {
@@ -477,6 +542,8 @@ public class MainActivity extends AppCompatActivity {
                 showPointByInterval(Path.nextPoint(request));
             };
             showCurrentPositionHandler.postDelayed(runnable, request.getRefreshRate());
+        } else {
+            speedSeekBar.setVisibility(View.INVISIBLE);
         }
     }
 
@@ -494,40 +561,70 @@ public class MainActivity extends AppCompatActivity {
         currentPosition = g;
     }
 
-    @OnClick(R.id.text_cancel_create_sheet)
-    protected void onCancelBottomSheetClicked() {
+    @OnClick(R.id.clear_points)
+    protected void onClearPointsClicked() {
+        eliminarNuestrosPuntos(CLAVE_BUSQUEDA, VALOR_BUSQUEDA);
         hideBottomSheet();
     }
 
-    @OnClick(R.id.add_marker_from_map)
-    protected void onAddMarkerFromMap() {
-        addMarkerFromMap = true;
-        Log.d("onAddMarkerFromMap", "addMarkerFromMap: " + addMarkerFromMap);
-        hideBottomSheet();
-    }
-
-    @OnClick(R.id.add_marker_from_lat_long)
-    protected void onAddMarkerFromLatLong() {
-        showAddMarkerFromLatLongDialog();
-        hideBottomSheet();
-    }
-
-    @OnClick(R.id.find_route)
-    protected void onFindRouteClicked() {
+    @OnClick(R.id.create_route)
+    protected void onCreateRouteClicked() {
         findRoute();
-        hideBottomSheet();
         progressBar.setVisibility(View.VISIBLE);
+        hideBottomSheet();
     }
 
-    @OnClick(R.id.clear_route)
+    @OnClick(R.id.load_routes)
+    protected void onLoadRoutesClicked() {
+        // TODO: cargar rutas
+        hideBottomSheet();
+    }
+
+    @OnClick(R.id.clear_routes)
     protected void onClearRouteClicked() {
-        mPoint.clear();
+        selectedPoints.clear();
         currentPosition = null;
-        mGraphicsOverlay.getGraphics().clear();
+        mGraphicsOverlay.getGraphics().clear(); // TODO: limpiar tabla de rutas
         if (showCurrentPositionHandler != null) {
             showCurrentPositionHandler.removeCallbacks(runnable);
         }
         hideBottomSheet();
+    }
+
+    @OnClick(R.id.simulate_tour)
+    protected void onSimulateTourClicked() {
+        getPointsFromMap();
+        hideBottomSheet();
+    }
+
+    @OnClick(R.id.text_config)
+    protected void onConfigClicked() {
+        ViewGroup vg = (ViewGroup) findViewById(android.R.id.content);
+        configuration.showConfigurationDialog(this, configuration, vg, new Configuration.Viewer.ChangeConfigCallback() {
+            @Override
+            public void onConfigChanged(Configuration configuration) {
+                Toast.makeText(MainActivity.this, getString(R.string.config_saved), Toast.LENGTH_LONG).show();
+                findBestSequenceForRoute = configuration.shortestRoute;
+            }
+
+            @Override
+            public void onConfigCanceled() {
+                Log.d("onConfigCanceled", "configuration not saved");
+            }
+        });
+        hideBottomSheet();
+    }
+
+    @OnClick(R.id.text_close_sheet)
+    protected void onCancelBottomSheetClicked() {
+        hideBottomSheet();
+    }
+
+    public void hideBottomSheet() {
+        if (bottomSheetBehavior != null && bottomSheetBehavior.getState() == BottomSheetBehavior.STATE_EXPANDED) {
+            bottomSheetBehavior.setState(BottomSheetBehavior.STATE_COLLAPSED);
+            bottomSheetBehavior = null;
+        }
     }
 
     private void setBottomSheet(View bottomSheet) {
@@ -544,13 +641,6 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    public void hideBottomSheet() {
-        if (bottomSheetBehavior != null && bottomSheetBehavior.getState() == BottomSheetBehavior.STATE_EXPANDED) {
-            bottomSheetBehavior.setState(BottomSheetBehavior.STATE_COLLAPSED);
-            bottomSheetBehavior = null;
-        }
-    }
-
     private void openAddMarkerFromMapDialog(MotionEvent e) {
         android.graphics.Point p = new android.graphics.Point(Math.round(e.getX()), Math.round(e.getY()));
         Point point = mMapView.screenToLocation(p);
@@ -558,17 +648,16 @@ public class MainActivity extends AppCompatActivity {
         ViewGroup vg = (ViewGroup) findViewById(android.R.id.content);
         marker.showAddFromMapDialog(MainActivity.this, vg, point, markers, new Marker.Viewer.AddMarkerCallback() {
             @Override
-            public void onMarkerAdded() {
+            public void onMarkerAdded(Marker marker) {
                 Log.d("onMarkerAdded", "");
                 Toast.makeText(MainActivity.this, getString(R.string.marker_added), Toast.LENGTH_LONG).show();
-                showMarkers(markers);
-                addMarkerFromMap = false;
+                addFeature(point);
+                //showMarkers(markers);
             }
 
             @Override
             public void onMarkerAddingCanceled() {
                 Log.d("onMarkerAddingCanceled", "");
-                addMarkerFromMap = false;
             }
         });
     }
@@ -579,10 +668,11 @@ public class MainActivity extends AppCompatActivity {
         Point point = new Point(0, 0);
         marker.showAddFromLatLongDialog(MainActivity.this, vg, point, markers, new Marker.Viewer.AddMarkerCallback() {
             @Override
-            public void onMarkerAdded() {
+            public void onMarkerAdded(Marker marker) {
                 Log.d("onMarkerAdded", "");
                 Toast.makeText(MainActivity.this, getString(R.string.marker_added), Toast.LENGTH_LONG).show();
-                showMarkers(markers);
+                addFeature(new Point(marker.lon, marker.lat));
+                //showMarkers(markers);
             }
 
             @Override
