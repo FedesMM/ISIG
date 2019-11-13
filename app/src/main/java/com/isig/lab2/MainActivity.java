@@ -1,9 +1,7 @@
 package com.isig.lab2;
 
 import android.annotation.SuppressLint;
-import android.app.SearchManager;
-import android.content.Context;
-import android.content.Intent;
+import android.content.DialogInterface;
 import android.graphics.Color;
 import android.os.Bundle;
 
@@ -23,6 +21,7 @@ import com.esri.arcgisruntime.loadable.LoadStatus;
 import com.esri.arcgisruntime.mapping.ArcGISMap;
 import com.esri.arcgisruntime.mapping.Basemap;
 import com.esri.arcgisruntime.mapping.view.DefaultMapViewOnTouchListener;
+import com.esri.arcgisruntime.mapping.view.GeoView;
 import com.esri.arcgisruntime.mapping.view.Graphic;
 import com.esri.arcgisruntime.mapping.view.GraphicsOverlay;
 import com.esri.arcgisruntime.mapping.view.MapView;
@@ -46,6 +45,7 @@ import com.esri.arcgisruntime.util.ListenableList;
 import com.google.android.material.bottomsheet.BottomSheetBehavior;
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
 
+import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.widget.Toolbar;
 import butterknife.BindView;
@@ -54,7 +54,6 @@ import butterknife.OnClick;
 
 import android.os.Handler;
 import android.util.Log;
-import android.view.MenuInflater;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.Menu;
@@ -87,7 +86,6 @@ public class MainActivity extends AppCompatActivity {
     private static double SIMULATION_REFRESH_RATE = 1;
 
     //Georeferenciacion
-    private SearchView mSearchView = null;
     private boolean locatorLoaded = false;
 
     private FeatureLayer featureLayer;
@@ -142,7 +140,7 @@ public class MainActivity extends AppCompatActivity {
         setupOAuthManager();
 
         // set up map
-        ArcGISMap map = new ArcGISMap(Basemap.Type.STREETS_VECTOR, -34.726272, -56.227631, 16);
+        ArcGISMap map = new ArcGISMap(Basemap.Type.STREETS_VECTOR, 39.222678, -105.998207, 16);
         serviceFeatureTable = new ServiceFeatureTable(getString(R.string.url_server_puntos));
         featureLayer = new FeatureLayer(serviceFeatureTable);
         map.getOperationalLayers().add(featureLayer);
@@ -197,36 +195,108 @@ public class MainActivity extends AppCompatActivity {
 
     @Override
     public boolean onCreateOptionsMenu(Menu menu) {
-        //Georeferenciacion
-        MenuInflater inflater = getMenuInflater();
-        inflater.inflate(R.menu.options_menu, menu);
-        MenuItem searchMenuItem = menu.findItem(R.id.search);
-        if (searchMenuItem != null) {
-            mSearchView = (SearchView) searchMenuItem.getActionView();
-            if (mSearchView != null) {
-                SearchManager searchManager = (SearchManager) getSystemService(Context.SEARCH_SERVICE);
-                assert searchManager != null;
-                mSearchView.setSearchableInfo(searchManager.getSearchableInfo(getComponentName()));
-                mSearchView.setIconifiedByDefault(false);
-            }
+        getMenuInflater().inflate(R.menu.options_menu, menu);
+        final MenuItem miSearch = showMenuItem(menu.findItem(R.id.search), true);
+        if(miSearch != null) {
+            final SearchView searchView = (SearchView) miSearch.getActionView();
+            searchView.setMaxWidth(Integer.MAX_VALUE);
+            searchView.setOnQueryTextListener(new SearchView.OnQueryTextListener() {
+                @Override
+                public boolean onQueryTextSubmit(String query) {
+                    queryLocator(query);
+                    return false;
+                }
+                @Override
+                public boolean onQueryTextChange(String s) {
+                    return false;
+                }
+            });
         }
+        super.onCreateOptionsMenu(menu);
         return true;
+    }
+
+    public MenuItem showMenuItem(MenuItem item, boolean show) {
+        if (item != null) {
+            item.setVisible(show);
+        }
+        return item;
     }
 
     @Override
     public boolean onOptionsItemSelected(MenuItem item) {
-        // Handle action bar item clicks here. The action bar will
-        // automatically handle clicks on the Home/Up button, so long
-        // as you specify a parent activity in AndroidManifest.xml.
-        int id = item.getItemId();
-
-        //noinspection SimplifiableIfStatement
-        if (id == R.id.search) {
-
+        if (item.getItemId() == R.id.search) {
+            if (!item.isActionViewExpanded()) {
+                item.expandActionView();
+            }
             return true;
         }
-
         return super.onOptionsItemSelected(item);
+    }
+
+    //Georeferenciacion
+    private void queryLocator(final String query) {
+        if (query != null && query.length() > 0) {
+            mLocatorTask.cancelLoad();
+            final ListenableFuture<List<GeocodeResult>> geocodeFuture = mLocatorTask.geocodeAsync(query, mGeocodeParameters);
+            geocodeFuture.addDoneListener(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        List<GeocodeResult> geocodeResults = geocodeFuture.get();
+                        selectPlaceFromList(geocodeResults);
+                    } catch (InterruptedException | ExecutionException e) {
+                        e.printStackTrace();
+                    }
+                    geocodeFuture.removeDoneListener(this); // Done searching, remove the listener.
+                }
+            });
+        }
+    }
+
+    public void selectPlaceFromList(List<GeocodeResult> list) {
+        if (list != null && list.size() > 0) {
+            Log.d("selectPlaceFromList", "list size: " + list.size());
+            final CharSequence[] items = new CharSequence[list.size()];
+            final GeocodeResult[] geos = new GeocodeResult[list.size()];
+            int insertIndex = 0;
+            for (int i = 0; i < list.size(); i++) {
+                GeocodeResult elem = list.get(i);
+                Map<String, Object> map = elem.getAttributes();
+                if (map != null) {
+                    if (map.containsKey("Country") && map.get("Country").equals("USA")) {
+                        if (elem.getLabel() != null) {
+                            items[insertIndex] = elem.getLabel();
+                            geos[insertIndex] = elem;
+                            insertIndex++;
+                        }
+                    }
+                }
+            }
+
+            if (items.length == 1 && geos[0] != null) {
+                displaySearchResult(geos[0]);
+            } else if (items.length > 1) {
+                AlertDialog.Builder builder = new AlertDialog.Builder(MainActivity.this);
+                builder.setTitle("Selecciona una ubicación");
+                builder.setItems(items, (dialog, item) -> {
+                    displaySearchResult(geos[item]);
+                    dialog.dismiss();
+                }).show();
+            } else {
+                showNoPlaceFoundDialog();
+            }
+        } else {
+            showNoPlaceFoundDialog();
+        }
+    }
+
+    private void showNoPlaceFoundDialog() {
+        AlertDialog.Builder builder = new AlertDialog.Builder(MainActivity.this);
+        builder.setTitle("404 - Ubicación no encontrada");
+        builder.setMessage("No se encontraron ubicaciones asociadas a la busqueda realizada");
+        builder.setPositiveButton(getString(android.R.string.ok), null);
+        builder.show();
     }
 
     @Override
@@ -247,55 +317,17 @@ public class MainActivity extends AppCompatActivity {
         mMapView.dispose();
     }
 
-    //Georeferenciacion
-    @Override
-    protected void onNewIntent(Intent intent) {
-        super.onNewIntent(intent);
-        Log.d("onNewIntent", "Ejecuto");
-        if (Intent.ACTION_SEARCH.equals(intent.getAction())) {
-            queryLocator(intent.getStringExtra(SearchManager.QUERY));
-        }
-    }
-
-    //Georeferenciacion
-    private void queryLocator(final String query) {
-        if (query != null && query.length() > 0) {
-            mLocatorTask.cancelLoad();
-            final ListenableFuture<List<GeocodeResult>> geocodeFuture = mLocatorTask.geocodeAsync(query, mGeocodeParameters);
-            geocodeFuture.addDoneListener(new Runnable() {
-                @Override
-                public void run() {
-                    try {
-                        List<GeocodeResult> geocodeResults = geocodeFuture.get();
-                        if (geocodeResults.size() > 0) {
-                            displaySearchResult(geocodeResults.get(0));
-                        } else {
-                            Toast.makeText(getApplicationContext(), getString(R.string.nothing_found) + " " + query, Toast.LENGTH_LONG).show();
-                        }
-                    } catch (InterruptedException | ExecutionException e) {
-                        // ... determine how you want to handle an error
-                    }
-                    geocodeFuture.removeDoneListener(this); // Done searching, remove the listener.
-                }
-            });
-        }
-    }
-
     // Georeferenciacion
     private void displaySearchResult(GeocodeResult geocodedLocation) {
-        Log.d("displaySearchResult", "Desplego el resultado");
         String displayLabel = geocodedLocation.getLabel();
         TextSymbol textLabel = new TextSymbol(18, displayLabel, Color.rgb(192, 32, 32), TextSymbol.HorizontalAlignment.CENTER, TextSymbol.VerticalAlignment.BOTTOM);
-        Log.d("displaySearchResult", "Armo el elemento y  su texto");
         Graphic textGraphic = new Graphic(geocodedLocation.getDisplayLocation(), textLabel);
         Graphic mapMarker = new Graphic(geocodedLocation.getDisplayLocation(), geocodedLocation.getAttributes(),
                 new SimpleMarkerSymbol(SimpleMarkerSymbol.Style.SQUARE, Color.rgb(255, 0, 0), 12.0f));
         ListenableList allGraphics = mGraphicsOverlay.getGraphics();
         allGraphics.clear();
-        Log.d("displaySearchResult", "Desplego el elemento y el texto");
         allGraphics.add(mapMarker);
         allGraphics.add(textGraphic);
-        Log.d("displaySearchResult", "Centro la vista en el punto.");
         mMapView.setViewpointCenterAsync(geocodedLocation.getDisplayLocation());
     }
 
@@ -314,8 +346,7 @@ public class MainActivity extends AppCompatActivity {
                 locatorLoaded = true;
                 desplegarInfoLocator(mLocatorTask);
 
-            } else if (mSearchView != null) {
-                mSearchView.setEnabled(false);
+            } else {
                 Log.d("Init", "No cargo el locator");
             }
         });

@@ -4,8 +4,8 @@
 
     <!-- *** Georeferenciacion *** -->
     <string name="search_title">Search</string>
-    <string name="search_hint">Find an address</string>
-    <string name="nothing_found">Nothing found for</string>
+    <string name="search_hint">Buscar lugares</string>
+    <string name="nothing_found">No se encontraron ubicaciones</string>
 
     <!-- *** Puntos *** -->
     <string name="add_marker">Agregar punto</string>
