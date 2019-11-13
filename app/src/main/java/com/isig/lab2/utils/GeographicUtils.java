@@ -1,7 +1,13 @@
 package com.isig.lab2.utils;
 
+import android.util.Log;
+
+import com.esri.arcgisruntime.data.Feature;
 import com.esri.arcgisruntime.geometry.CoordinateFormatter;
 import com.esri.arcgisruntime.geometry.Point;
+import com.esri.arcgisruntime.layers.FeatureLayer;
+
+import java.util.List;
 
 public class GeographicUtils {
 
@@ -26,5 +32,36 @@ public class GeographicUtils {
         return "";
     }
 
+    public static boolean isSelected(List<Feature> list, Feature feature) {
+        if (feature.getGeometry() instanceof Point) {
+            Point pointFeature = (Point) feature.getGeometry();
+            if (!list.isEmpty()) {
+                for (Feature f : list) {
+                    if (f.getGeometry() instanceof Point) {
+                        Point p = (Point) f.getGeometry();
+                        if (p.getX() == pointFeature.getX() && p.getY() == pointFeature.getY()) {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        return false;
+    }
 
+    public static void removeFeatureFromList(List<Feature> list, Feature feature) {
+        if (feature.getGeometry() instanceof Point) {
+            Point pointFeature = (Point) feature.getGeometry();
+            if (!list.isEmpty()) {
+                for (int i = 0; i < list.size(); i++) {
+                    if (list.get(i).getGeometry() instanceof Point) {
+                        Point p = (Point) list.get(i).getGeometry();
+                        if (p.getX() == pointFeature.getX() && p.getY() == pointFeature.getY()) {
+                            list.remove(i);
+                        }
+                    }
+                }
+            }
+        }
+    }
 }

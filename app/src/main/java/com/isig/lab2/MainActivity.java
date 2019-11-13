@@ -1,7 +1,6 @@
 package com.isig.lab2;
 
 import android.annotation.SuppressLint;
-import android.content.DialogInterface;
 import android.graphics.Color;
 import android.os.Bundle;
 
@@ -20,10 +19,11 @@ import com.esri.arcgisruntime.layers.FeatureLayer;
 import com.esri.arcgisruntime.loadable.LoadStatus;
 import com.esri.arcgisruntime.mapping.ArcGISMap;
 import com.esri.arcgisruntime.mapping.Basemap;
+import com.esri.arcgisruntime.mapping.GeoElement;
 import com.esri.arcgisruntime.mapping.view.DefaultMapViewOnTouchListener;
-import com.esri.arcgisruntime.mapping.view.GeoView;
 import com.esri.arcgisruntime.mapping.view.Graphic;
 import com.esri.arcgisruntime.mapping.view.GraphicsOverlay;
+import com.esri.arcgisruntime.mapping.view.IdentifyLayerResult;
 import com.esri.arcgisruntime.mapping.view.MapView;
 import com.esri.arcgisruntime.security.AuthenticationManager;
 import com.esri.arcgisruntime.security.DefaultAuthenticationChallengeHandler;
@@ -77,6 +77,7 @@ import com.isig.lab2.models.Configuration;
 import com.isig.lab2.models.Marker;
 import com.isig.lab2.models.Path;
 import com.isig.lab2.models.RoutePointRequestModel;
+import com.isig.lab2.utils.GeographicUtils;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -88,6 +89,7 @@ public class MainActivity extends AppCompatActivity {
     //Georeferenciacion
     private boolean locatorLoaded = false;
 
+    private List<Feature> selectedFeatures = new ArrayList<>();
     private FeatureLayer featureLayer;
     private ServiceFeatureTable serviceFeatureTable;
     private GraphicsOverlay mGraphicsOverlay;
@@ -106,7 +108,6 @@ public class MainActivity extends AppCompatActivity {
     private RoutePointRequestModel request;
     private double distTotal = 0;
     private boolean findBestSequenceForRoute = false;
-    private boolean isSimulatingTour = false;
 
     private Configuration configuration = new Configuration();
 
@@ -115,8 +116,6 @@ public class MainActivity extends AppCompatActivity {
     //private LocatorTask locator = new LocatorTask(getString(R.string.url_server_busqueda));
 
     //Ruta mas corta
-    private List<Point> selectedPoints = new ArrayList<>();
-
     @BindView(R.id.mapView) MapView mMapView;
     @BindView(R.id.bottom_sheet_markers) View bottomSheetMarkers;
     @BindView(R.id.fab) FloatingActionButton fab;
@@ -154,16 +153,45 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public boolean onSingleTapConfirmed(MotionEvent e) {
                 if (locatorLoaded) {
-                    if (addMarkerFromMap) {
-                        openAddMarkerFromMapDialog(e);
-                    } else {
-                        android.graphics.Point screenPoint = new android.graphics.Point(
-                                Math.round(e.getX()),
-                                Math.round(e.getY()));
-                        Point mapPoint = mMapView.screenToLocation(screenPoint);
-                        //mapClicked(mapPoint);
-                        addFeature(mapPoint);
-                    }
+                    android.graphics.Point screenPoint = new android.graphics.Point(Math.round(e.getX()), Math.round(e.getY()));
+
+                    final ListenableFuture<IdentifyLayerResult> identifyFuture = mMapView.identifyLayerAsync(featureLayer, screenPoint, 20, false, 25);
+
+                    identifyFuture.addDoneListener(() -> {
+                        try {
+                            IdentifyLayerResult identifyLayerResult = identifyFuture.get();
+
+                            if (identifyLayerResult.getLayerContent() instanceof FeatureLayer) {
+                                featureLayer = (FeatureLayer) identifyLayerResult.getLayerContent();
+                            }
+
+                            if (!identifyLayerResult.getElements().isEmpty() && featureLayer != null) {
+                                for (GeoElement identifiedElement : identifyLayerResult.getElements()) {
+                                    if (identifiedElement instanceof Feature) {
+                                        Feature identifiedFeature = (Feature) identifiedElement;
+                                        if (!GeographicUtils.isSelected(selectedFeatures, identifiedFeature)) {
+                                            featureLayer.selectFeature(identifiedFeature);
+                                            selectedFeatures.add(identifiedFeature);
+                                        } else {
+                                            featureLayer.unselectFeature(identifiedFeature);
+                                            GeographicUtils.removeFeatureFromList(selectedFeatures, identifiedFeature);
+                                        }
+                                    }
+                                }
+                            } else {
+                                if (addMarkerFromMap) {
+                                    openAddMarkerFromMapDialog(e);
+                                } else {
+                                    Point mapPoint = mMapView.screenToLocation(screenPoint);
+                                    //mapClicked(mapPoint);
+                                    addFeature(mapPoint);
+                                }
+                            }
+
+                        } catch (InterruptedException | ExecutionException ex) {
+                            ex.printStackTrace();
+                        }
+                    });
                 }
                 return super.onSingleTapConfirmed(e);
             }
@@ -388,15 +416,13 @@ public class MainActivity extends AppCompatActivity {
     }
 
     public void addFeature(Point mapPoint) {
-        selectedPoints.add(mapPoint);
 
         Map<String, Object> attributes = new HashMap<>();
-        attributes.put("Description", VALOR_BUSQUEDA); // Coded Values: [1: Manatee] etc...
-        attributes.put("Event Website",VALOR_BUSQUEDA); // Coded Values: [0: No] , [1: Yes]
+        attributes.put("Description", VALOR_BUSQUEDA);
+        attributes.put("Event Website",VALOR_BUSQUEDA);
         attributes.put("Recommend Attending", "Yes");
         attributes.put("Event_Type", 1);
 
-        // Create a new feature from the attributes and an existing point geometry, and then add the feature
         Feature addedFeature = serviceFeatureTable.createFeature(attributes, mapPoint);
         final ListenableFuture<Void> addFeatureFuture = serviceFeatureTable.addFeatureAsync(addedFeature);
         addFeatureFuture.addDoneListener(() -> {
@@ -408,8 +434,8 @@ public class MainActivity extends AppCompatActivity {
                 applyEditsFuture.addDoneListener(() -> {
                     try {
                         final List<FeatureEditResult> featureEditResults = applyEditsFuture.get();
-                        // if required, can check the edits applied in this operation
-                        Log.d("Number of edits", "" + featureEditResults.size());
+                        Log.d("# of saved features", "" + featureEditResults.size());
+
                     } catch (InterruptedException | ExecutionException e) {
                         e.printStackTrace();
                     }
@@ -441,10 +467,10 @@ public class MainActivity extends AppCompatActivity {
                         Envelope envelope = feature.getGeometry().getExtent();
                         mMapView.setViewpointGeometryAsync(envelope, 10);
                         featureLayer.selectFeature(feature);
+                        selectedFeatures.add(feature);
                     }
                 } else {
                     Toast.makeText(this, "No encuentra puntos con Descripcion: " + "Grupo 3", Toast.LENGTH_LONG).show();
-                    Log.e("buscarNuestrosPuntos", "No encuentra puntos con "+key+": " + value);
                 }
             } catch (Exception e) {
                 String error = "Feature search failed for: " + "Grupo 3" + ". Error: " + e.getMessage();
@@ -469,7 +495,6 @@ public class MainActivity extends AppCompatActivity {
                     final List<FeatureEditResult> featureEditResults = serviceFeatureTable.applyEditsAsync().get();
                 } else {
                     Toast.makeText(this, "No encuentra puntos con Descripcion: " + "Grupo 3", Toast.LENGTH_LONG).show();
-                    Log.e("eliminarNuestrosPuntos", "No encuentra puntos con "+key+": " + value);
                 }
             } catch (Exception e) {
                 String error = "Feature search failed for: " + "Grupo 3" + ". Error: " + e.getMessage();
@@ -481,7 +506,6 @@ public class MainActivity extends AppCompatActivity {
 
     //Ruta mas corta
     private void mapClicked(Point location) {
-        selectedPoints.add(location);
 
         float markerSize = 8.0f;
         float markerOutlineThickness = 2.0f;
@@ -508,8 +532,10 @@ public class MainActivity extends AppCompatActivity {
                         RouteParameters routeParameters = routeParamsFuture.get();
                         routeParameters.setFindBestSequence(findBestSequenceForRoute);
                         List<Stop> stops = new ArrayList<>();
-                        for (int i = 0; i < selectedPoints.size(); i++) {
-                            stops.add(new Stop(selectedPoints.get(i)));
+                        for (int i = 0; i < selectedFeatures.size(); i++) {
+                            if (selectedFeatures.get(i).getGeometry() instanceof Point) {
+                                stops.add(new Stop((Point) selectedFeatures.get(i).getGeometry()));
+                            }
                         }
                         routeParameters.setStops(stops);
                         // Code from the next step goes here
@@ -618,8 +644,10 @@ public class MainActivity extends AppCompatActivity {
 
     @OnClick(R.id.clear_routes)
     protected void onClearRouteClicked() {
-        selectedPoints.clear();
+        featureLayer.clearSelection();
+        selectedFeatures.clear();
         currentPosition = null;
+        speedSeekBar.setVisibility(View.INVISIBLE);
         mGraphicsOverlay.getGraphics().clear(); // TODO: limpiar tabla de rutas
         if (showCurrentPositionHandler != null) {
             showCurrentPositionHandler.removeCallbacks(runnable);
