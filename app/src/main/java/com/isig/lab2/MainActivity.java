@@ -100,7 +100,7 @@ public class MainActivity extends AppCompatActivity {
     private boolean addMarkerFromMap = true;
     private BottomSheetBehavior bottomSheetBehavior;
 
-    private Graphic currentPositionGraphic;
+    private Graphic currentPosition;
     private Point currentPositionPoint;
     private int currentPositionColor = Path.getColorBySpeedIndex(Path.getMediumSpeedIndex());
     private Handler showCurrentPositionHandler;
@@ -561,9 +561,9 @@ public class MainActivity extends AppCompatActivity {
         Graphic g = new Graphic(currentPositionPoint, sms);
         mGraphicsOverlay.getGraphics().add(g);
         if (mGraphicsOverlay.getGraphics().contains(g)) {
-            mGraphicsOverlay.getGraphics().remove(currentPositionGraphic);
+            mGraphicsOverlay.getGraphics().remove(currentPosition);
         }
-        currentPositionGraphic = g;
+        currentPosition = g;
     }
 
     @OnClick(R.id.clear_points)
@@ -588,7 +588,7 @@ public class MainActivity extends AppCompatActivity {
     @OnClick(R.id.clear_routes)
     protected void onClearRouteClicked() {
         selectedPoints.clear();
-        currentPositionGraphic = null;
+        currentPosition = null;
         mGraphicsOverlay.getGraphics().clear(); // TODO: limpiar tabla de rutas
         if (showCurrentPositionHandler != null) {
             showCurrentPositionHandler.removeCallbacks(runnable);
