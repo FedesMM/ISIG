@@ -84,6 +84,8 @@ public class MainActivity extends AppCompatActivity {
     private static String CLAVE_BUSQUEDA ="Description";
     private static String VALOR_BUSQUEDA ="Grupo 3";
 
+    private static double SIMULATION_REFRESH_RATE = 1;
+
     //Georeferenciacion
     private SearchView mSearchView = null;
     private boolean locatorLoaded = false;
@@ -98,7 +100,9 @@ public class MainActivity extends AppCompatActivity {
     private boolean addMarkerFromMap = true;
     private BottomSheetBehavior bottomSheetBehavior;
 
-    private Graphic currentPosition;
+    private Graphic currentPositionGraphic;
+    private Point currentPositionPoint;
+    private int currentPositionColor = Path.getColorBySpeedIndex(Path.getMediumSpeedIndex());
     private Handler showCurrentPositionHandler;
     private Runnable runnable;
     private RoutePointRequestModel request;
@@ -181,6 +185,7 @@ public class MainActivity extends AppCompatActivity {
                 if (request != null && distTotal > 0) {
                     Log.d("onProgressChanged", "progress: " + progress + ", speed: " + Path.getSpeeds(distTotal)[Path.TOUR_TRAVEL_INTERVALS-progress-1]);
                     request.speed = Path.getSpeedByIndex(distTotal, progress);
+                    currentPositionColor = Path.getColorBySpeedIndex(progress);
                 }
             }
             @Override
@@ -525,7 +530,7 @@ public class MainActivity extends AppCompatActivity {
                         if (speedSeekBar != null) {
                             adequateSpeed = Path.getSpeedByIndex(distTotal, speedSeekBar.getProgress());
                         }
-                        request = new RoutePointRequestModel(markerPoints, 0, adequateSpeed, 1);
+                        request = new RoutePointRequestModel(markerPoints, 0, adequateSpeed, SIMULATION_REFRESH_RATE);
                         request.resultMarker = markerPoints.get(0);
                         showPointByInterval(request);
                     }
@@ -538,7 +543,7 @@ public class MainActivity extends AppCompatActivity {
         if (request.resultMarker != null) {
             showCurrentPositionHandler = new Handler();
             runnable = () -> {
-                showPosition(request.resultMarker);
+                showPosition(request.resultMarker, SimpleMarkerSymbol.Style.DIAMOND, 12);
                 showPointByInterval(Path.nextPoint(request));
             };
             showCurrentPositionHandler.postDelayed(runnable, request.getRefreshRate());
@@ -547,18 +552,18 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    private void showPosition(Marker m) {
-        Log.d("showPosition: ", m.lat + " " + m.lon);
-
-        SpatialReference sp = m.getSpatialReference();
-        Point marker = new Point(m.lon, m.lat, sp);
-        SimpleMarkerSymbol sms = new SimpleMarkerSymbol(SimpleMarkerSymbol.Style.DIAMOND, m.getColor(), 12);
-        Graphic g = new Graphic(marker, sms);
+    private void showPosition(Marker m, SimpleMarkerSymbol.Style style, int size) {
+        if (m != null) {
+            Log.d("showPosition: ", m.lat + " " + m.lon);
+            currentPositionPoint = new Point(m.lon, m.lat, m.getSpatialReference());
+        }
+        SimpleMarkerSymbol sms = new SimpleMarkerSymbol(style, currentPositionColor, size);
+        Graphic g = new Graphic(currentPositionPoint, sms);
         mGraphicsOverlay.getGraphics().add(g);
         if (mGraphicsOverlay.getGraphics().contains(g)) {
-            mGraphicsOverlay.getGraphics().remove(currentPosition);
+            mGraphicsOverlay.getGraphics().remove(currentPositionGraphic);
         }
-        currentPosition = g;
+        currentPositionGraphic = g;
     }
 
     @OnClick(R.id.clear_points)
@@ -583,7 +588,7 @@ public class MainActivity extends AppCompatActivity {
     @OnClick(R.id.clear_routes)
     protected void onClearRouteClicked() {
         selectedPoints.clear();
-        currentPosition = null;
+        currentPositionGraphic = null;
         mGraphicsOverlay.getGraphics().clear(); // TODO: limpiar tabla de rutas
         if (showCurrentPositionHandler != null) {
             showCurrentPositionHandler.removeCallbacks(runnable);

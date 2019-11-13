@@ -13,6 +13,16 @@ public class Path {
     public static double MAX_TOUR_TRAVEL = 200;
     public static int TOUR_TRAVEL_INTERVALS = 7; // siempre IMPAR
 
+    public static int GREEN_R = 45;
+    public static int GREEN_G = 201;
+    public static int GREEN_B = 55;
+    public static int RED_R = 204;
+    public static int RED_G = 50;
+    public static int RED_B = 50;
+    public static int YELLOW_R = 254;
+    public static int YELLOW_G = 221;
+    public static int YELLOW_B = 44;
+
     public static int[] speeds = null;
 
     private boolean hasM;
@@ -153,5 +163,35 @@ public class Path {
 
     public static int getSpeedByIndex(double distTotal, int index) {
         return Path.getSpeeds(distTotal)[Path.TOUR_TRAVEL_INTERVALS-index-1];
+    }
+
+    public static int getColorBySpeedIndex(int index) {
+        if (index == 0)
+            return Color.rgb(RED_R, RED_G, RED_B);
+        if (index == MAX_TOUR_TRAVEL-1)
+            return Color.rgb(GREEN_R, GREEN_G, GREEN_B);
+        int med = getMediumSpeedIndex();
+        if (index < med) {
+            double ratio = (double) index / (double) med;
+            String hexString = "#" + minPlusRatioInHex(RED_R,YELLOW_R,ratio)+minPlusRatioInHex(RED_G,YELLOW_G,ratio)+minPlusRatioInHex(RED_B,YELLOW_B,ratio);
+            return Color.parseColor(hexString);
+        } else if (index > med) {
+            double ratio = (double) (index - med) / (double) med;
+            String hexString = "#" + minPlusRatioInHex(YELLOW_R,GREEN_R,ratio)+minPlusRatioInHex(YELLOW_G,GREEN_G,ratio)+minPlusRatioInHex(YELLOW_B,GREEN_B,ratio);
+            return Color.parseColor(hexString);
+        } else {
+            return Color.rgb(YELLOW_R, YELLOW_G, YELLOW_B);
+        }
+    }
+
+    private static String minPlusRatioInHex(int a, int b, double ratio) {
+        String res = Long.toHexString(Math.round(a + ((b - a) * ratio)));
+        if (a > b) {
+            res = Long.toHexString(Math.round(a - ((a - b) * ratio)));
+        }
+        if (res.length() == 1) {
+            res = "0" + res;
+        }
+        return res;
     }
 }
