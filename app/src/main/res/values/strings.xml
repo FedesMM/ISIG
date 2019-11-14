@@ -9,6 +9,8 @@
 
     <!-- *** Puntos *** -->
     <string name="add_marker">Agregar punto</string>
+    <string name="add_marker_mode">Modo agregar puntos</string>
+    <string name="select_mode">Modo seleccionar</string>
     <string name="clear_points">Borrar Puntos</string>
     <string name="nombre">Nombre:</string>
     <string name="latitud">Latitud:</string>
@@ -30,6 +32,7 @@
     <string name="clear_route">Borrar rutas</string>
 
     <string name="simulate_tour">Simular Recorrido</string>
+    <string name="deselect_all">Deseleccionar todo</string>
 
     <!-- *** Configuración ***-->
     <string name="config">Configuración</string>
@@ -38,6 +41,8 @@
 
     <!-- *** Server URLs ***-->
     <string name="url_server_puntos">http://sampleserver5.arcgisonline.com/arcgis/rest/services/LocalGovernment/Events/FeatureServer/0</string>
+    <string name="url_server_rutas">http://sampleserver5.arcgisonline.com/arcgis/rest/services/LocalGovernment/Recreation/FeatureServer/1</string>
+    <string name="url_server_condados">http://services.arcgisonline.com/arcgis/rest/services/Demographics/USA_1990-2000_Population_Change/MapServer/3</string>
     <string name="url_server_busqueda">http://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer</string>
     <string name="page_url">"https://www.arcgis.com"</string>
 

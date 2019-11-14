@@ -3,11 +3,18 @@ package com.isig.lab2.models;
 import android.graphics.Color;
 import android.util.Log;
 
+import com.esri.arcgisruntime.geometry.Geometry;
+import com.esri.arcgisruntime.geometry.GeometryEngine;
+import com.esri.arcgisruntime.geometry.Point;
+import com.esri.arcgisruntime.geometry.SpatialReference;
+import com.esri.arcgisruntime.geometry.SpatialReferences;
+
+import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-public class Path {
+public class Path implements Serializable {
     public static double MIN_TOUR_TRAVEL = 20;
     public static double MED_TOUR_TRAVEL = 60;
     public static double MAX_TOUR_TRAVEL = 200;
@@ -63,14 +70,30 @@ public class Path {
         return (TOUR_TRAVEL_INTERVALS-1)/2;
     }
 
-    public List<Marker> getPoints() {
+    public List<Marker> getPoints(int representation) {
         List<Marker> list = new ArrayList<>();
-        list.add(new Marker(getPaths()[0][0][0], getPaths()[0][0][1], Marker.REPRESENTATION_WGS84));
+        if (representation == Marker.REPRESENTATION_UTM) {
+            Geometry g = GeometryEngine.project(new Point(getPaths()[0][0][0], getPaths()[0][0][1], SpatialReference.create(102100)), SpatialReference.create(4326));
+            Log.d("getPoints", g.toJson());
+            if (g instanceof Point) {
+                list.add(new Marker(((Point) g).getX(), ((Point) g).getY(), representation));
+            }
+        } else {
+            list.add(new Marker(getPaths()[0][0][0], getPaths()[0][0][1], Marker.REPRESENTATION_WGS84));
+        }
 
         for (int i = 0; i < getPaths().length; i++) {
             for (int j = 0; j < getPaths()[i].length; j++) {
                 if (j > 0) {
-                    list.add(new Marker(getPaths()[i][j][0], getPaths()[i][j][1], Marker.REPRESENTATION_WGS84));
+                    if (representation == Marker.REPRESENTATION_UTM) {
+                        Geometry g = GeometryEngine.project(new Point(getPaths()[i][j][0], getPaths()[i][j][1], SpatialReference.create(102100)), SpatialReference.create(4326));
+                        Log.d("getPoints", g.toJson());
+                        if (g instanceof Point) {
+                            list.add(new Marker(((Point) g).getX(), ((Point) g).getY(), representation));
+                        }
+                    } else {
+                        list.add(new Marker(getPaths()[i][j][0], getPaths()[i][j][1], Marker.REPRESENTATION_WGS84));
+                    }
                 }
             }
         }

@@ -23,20 +23,45 @@
         android:background="@drawable/rounded_corners">
     </View>
 
-    <TextView
-        android:id="@+id/clear_points"
-        android:layout_width="match_parent"
+    <LinearLayout
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
+        android:layout_gravity="bottom|center_horizontal"
         android:layout_marginTop="10dp"
         android:layout_marginBottom="10dp"
         android:layout_marginEnd="12dp"
         android:layout_marginStart="12dp"
         android:background="@drawable/white_rounded_corner_background"
-        android:textColor="@color/danger_red"
-        android:gravity="center"
-        android:padding="10dp"
-        android:text="@string/clear_points"
-        android:textSize="18sp"/>
+        android:gravity="bottom|center_horizontal"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/create_point"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:padding="10dp"
+            android:textColor="@color/create_blue"
+            android:text="@string/select_mode"
+            android:textSize="18sp"/>
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="0.5dp"
+            android:background="@color/grey"/>
+
+        <TextView
+            android:id="@+id/clear_points"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:padding="10dp"
+            android:textColor="@color/danger_red"
+            android:background="@drawable/white_rounded_corner_background"
+            android:text="@string/clear_points"
+            android:textSize="18sp"/>
+
+    </LinearLayout>
 
     <LinearLayout
         android:layout_width="wrap_content"
@@ -56,20 +81,7 @@
             android:gravity="center"
             android:padding="10dp"
             android:text="@string/create_route"
-            android:textSize="18sp"/>
-
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="0.5dp"
-            android:background="@color/grey"/>
-
-        <TextView
-            android:id="@+id/load_routes"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:gravity="center"
-            android:padding="10dp"
-            android:text="@string/load_routes"
+            android:textColor="@color/create_blue"
             android:textSize="18sp"/>
 
         <View
@@ -88,6 +100,20 @@
             android:textSize="18sp"/>
 
     </LinearLayout>
+
+    <TextView
+        android:id="@+id/deselect_all"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="10dp"
+        android:layout_marginEnd="12dp"
+        android:layout_marginStart="12dp"
+        android:background="@drawable/white_rounded_corner_background"
+        android:textColor="@color/black"
+        android:gravity="center"
+        android:padding="10dp"
+        android:text="@string/deselect_all"
+        android:textSize="18sp"/>
 
     <TextView
         android:id="@+id/simulate_tour"

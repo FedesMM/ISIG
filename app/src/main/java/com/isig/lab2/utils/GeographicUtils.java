@@ -5,7 +5,6 @@ import android.util.Log;
 import com.esri.arcgisruntime.data.Feature;
 import com.esri.arcgisruntime.geometry.CoordinateFormatter;
 import com.esri.arcgisruntime.geometry.Point;
-import com.esri.arcgisruntime.layers.FeatureLayer;
 
 import java.util.List;
 

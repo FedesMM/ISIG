@@ -12,6 +12,8 @@ import com.esri.arcgisruntime.data.FeatureQueryResult;
 import com.esri.arcgisruntime.data.QueryParameters;
 import com.esri.arcgisruntime.data.ServiceFeatureTable;
 import com.esri.arcgisruntime.geometry.Envelope;
+import com.esri.arcgisruntime.geometry.Geometry;
+import com.esri.arcgisruntime.geometry.GeometryEngine;
 import com.esri.arcgisruntime.geometry.Point;
 import com.esri.arcgisruntime.geometry.Polyline;
 import com.esri.arcgisruntime.geometry.SpatialReference;
@@ -54,6 +56,7 @@ import butterknife.OnClick;
 
 import android.os.Handler;
 import android.util.Log;
+import android.util.TypedValue;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.Menu;
@@ -62,6 +65,7 @@ import android.widget.ProgressBar;
 import android.widget.SearchView;
 import android.view.ViewGroup;
 import android.widget.SeekBar;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import java.net.MalformedURLException;
@@ -77,6 +81,7 @@ import com.isig.lab2.models.Configuration;
 import com.isig.lab2.models.Marker;
 import com.isig.lab2.models.Path;
 import com.isig.lab2.models.RoutePointRequestModel;
+import com.isig.lab2.utils.APIUtils;
 import com.isig.lab2.utils.GeographicUtils;
 
 public class MainActivity extends AppCompatActivity {
@@ -86,23 +91,30 @@ public class MainActivity extends AppCompatActivity {
 
     private static double SIMULATION_REFRESH_RATE = 1;
 
-    //Georeferenciacion
-    private boolean locatorLoaded = false;
+    // Puntos
+    private FeatureLayer featureLayerPuntos;
+    private ServiceFeatureTable serviceFeatureTablePuntos;
+    private List<Feature> selectedFeaturePuntos = new ArrayList<>();
 
-    private List<Feature> selectedFeatures = new ArrayList<>();
-    private FeatureLayer featureLayer;
-    private ServiceFeatureTable serviceFeatureTable;
+    // Rutas
+    private ServiceFeatureTable serviceFeatureTableRutas;
+    private FeatureLayer featureLayerRutas;
+    private Feature selectedFeatureRuta = null;
+
     private GraphicsOverlay mGraphicsOverlay;
     private LocatorTask mLocatorTask = null;
     private GeocodeParameters mGeocodeParameters = new GeocodeParameters();
+    private boolean locatorLoaded = false;
 
-    private List<Marker> markers = new ArrayList<>();
     private boolean addMarkerFromMap = true;
     private BottomSheetBehavior bottomSheetBehavior;
 
+    // current position
     private Graphic currentPosition;
     private Point currentPositionPoint;
     private int currentPositionColor = Path.getColorBySpeedIndex(Path.getMediumSpeedIndex());
+    private SimpleMarkerSymbol.Style currentPositionStyle = SimpleMarkerSymbol.Style.DIAMOND;
+    private int currentPositionSize = 15;
     private Handler showCurrentPositionHandler;
     private Runnable runnable;
     private RoutePointRequestModel request;
@@ -111,17 +123,14 @@ public class MainActivity extends AppCompatActivity {
 
     private Configuration configuration = new Configuration();
 
-    //Busqueda por categoria
-    private GraphicsOverlay graphicsOverlay;
-    //private LocatorTask locator = new LocatorTask(getString(R.string.url_server_busqueda));
-
-    //Ruta mas corta
-    @BindView(R.id.mapView) MapView mMapView;
-    @BindView(R.id.bottom_sheet_markers) View bottomSheetMarkers;
-    @BindView(R.id.fab) FloatingActionButton fab;
     @BindView(R.id.toolbar) Toolbar toolbar;
+    @BindView(R.id.mapView) MapView mMapView;
     @BindView(R.id.progress_bar) ProgressBar progressBar;
+    @BindView(R.id.add_points_toggle_text) TextView addPointToggleText;
+    @BindView(R.id.create_point) TextView modeText;
+    @BindView(R.id.bottom_sheet_markers) View bottomSheetMarkers;
     @BindView(R.id.speedSeekBar) SeekBar speedSeekBar;
+    @BindView(R.id.fab) FloatingActionButton fab;
 
     @SuppressLint("ClickableViewAccessibility")
     @Override
@@ -129,6 +138,14 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         ButterKnife.bind(this);
+
+        TypedValue tv = new TypedValue();
+        if (getTheme().resolveAttribute(android.R.attr.actionBarSize, tv, true)) {
+            int actionBarHeight = TypedValue.complexToDimensionPixelSize(tv.data,getResources().getDisplayMetrics());
+            ViewGroup.MarginLayoutParams p = (ViewGroup.MarginLayoutParams) addPointToggleText.getLayoutParams();
+            p.setMargins(5,actionBarHeight + 5, 5, 5);
+            addPointToggleText.requestLayout();
+        }
 
         progressBar.setVisibility(View.VISIBLE);
         setSupportActionBar(toolbar);
@@ -140,9 +157,15 @@ public class MainActivity extends AppCompatActivity {
 
         // set up map
         ArcGISMap map = new ArcGISMap(Basemap.Type.STREETS_VECTOR, 39.222678, -105.998207, 16);
-        serviceFeatureTable = new ServiceFeatureTable(getString(R.string.url_server_puntos));
-        featureLayer = new FeatureLayer(serviceFeatureTable);
-        map.getOperationalLayers().add(featureLayer);
+
+        serviceFeatureTablePuntos = new ServiceFeatureTable(getString(R.string.url_server_puntos));
+        featureLayerPuntos = new FeatureLayer(serviceFeatureTablePuntos);
+        map.getOperationalLayers().add(featureLayerPuntos);
+
+        serviceFeatureTableRutas = new ServiceFeatureTable(getString(R.string.url_server_rutas));
+        featureLayerRutas = new FeatureLayer(serviceFeatureTableRutas);
+        map.getOperationalLayers().add(featureLayerRutas);
+
         mMapView.setMap(map);
 
         // *** Georeferenciacion ***
@@ -155,41 +178,71 @@ public class MainActivity extends AppCompatActivity {
                 if (locatorLoaded) {
                     android.graphics.Point screenPoint = new android.graphics.Point(Math.round(e.getX()), Math.round(e.getY()));
 
-                    final ListenableFuture<IdentifyLayerResult> identifyFuture = mMapView.identifyLayerAsync(featureLayer, screenPoint, 20, false, 25);
-
-                    identifyFuture.addDoneListener(() -> {
+                    final ListenableFuture<IdentifyLayerResult> identifyFuturePunto = mMapView.identifyLayerAsync(featureLayerPuntos, screenPoint, 12, false, 25);
+                    identifyFuturePunto.addDoneListener(() -> {
                         try {
-                            IdentifyLayerResult identifyLayerResult = identifyFuture.get();
+                            IdentifyLayerResult identifyLayerResult = identifyFuturePunto.get();
 
                             if (identifyLayerResult.getLayerContent() instanceof FeatureLayer) {
-                                featureLayer = (FeatureLayer) identifyLayerResult.getLayerContent();
+                                featureLayerPuntos = (FeatureLayer) identifyLayerResult.getLayerContent();
                             }
 
-                            if (!identifyLayerResult.getElements().isEmpty() && featureLayer != null) {
+                            if (!identifyLayerResult.getElements().isEmpty() && featureLayerPuntos != null) {
                                 for (GeoElement identifiedElement : identifyLayerResult.getElements()) {
                                     if (identifiedElement instanceof Feature) {
                                         Feature identifiedFeature = (Feature) identifiedElement;
-                                        if (!GeographicUtils.isSelected(selectedFeatures, identifiedFeature)) {
-                                            featureLayer.selectFeature(identifiedFeature);
-                                            selectedFeatures.add(identifiedFeature);
-                                        } else {
-                                            featureLayer.unselectFeature(identifiedFeature);
-                                            GeographicUtils.removeFeatureFromList(selectedFeatures, identifiedFeature);
+
+                                        if (identifiedElement.getGeometry() instanceof Point) {
+                                            if (!GeographicUtils.isSelected(selectedFeaturePuntos, identifiedFeature)) {
+                                                featureLayerPuntos.selectFeature(identifiedFeature);
+                                                selectedFeaturePuntos.add(identifiedFeature);
+                                            } else {
+                                                featureLayerPuntos.unselectFeature(identifiedFeature);
+                                                GeographicUtils.removeFeatureFromList(selectedFeaturePuntos, identifiedFeature);
+                                            }
                                         }
                                     }
                                 }
                             } else {
                                 if (addMarkerFromMap) {
                                     openAddMarkerFromMapDialog(e);
-                                } else {
-                                    Point mapPoint = mMapView.screenToLocation(screenPoint);
-                                    //mapClicked(mapPoint);
-                                    addFeature(mapPoint);
                                 }
                             }
 
                         } catch (InterruptedException | ExecutionException ex) {
                             ex.printStackTrace();
+                        }
+                    });
+
+                    final ListenableFuture<IdentifyLayerResult> identifyFutureRuta = mMapView.identifyLayerAsync(featureLayerRutas, screenPoint, 15, false, 25);
+                    identifyFutureRuta.addDoneListener(() -> {
+                        if (!addMarkerFromMap) {
+                            try {
+                                IdentifyLayerResult identifyLayerResult = identifyFutureRuta.get();
+
+                                if (identifyLayerResult.getLayerContent() instanceof FeatureLayer) {
+                                    featureLayerRutas = (FeatureLayer) identifyLayerResult.getLayerContent();
+                                }
+
+                                if (!identifyLayerResult.getElements().isEmpty() && featureLayerRutas != null) {
+                                    for (GeoElement identifiedElement : identifyLayerResult.getElements()) {
+                                        if (identifiedElement instanceof Feature) {
+                                            Feature identifiedFeature = (Feature) identifiedElement;
+
+                                            if (identifiedElement.getGeometry() instanceof Polyline) {
+                                                if (selectedFeatureRuta != null) {
+                                                    featureLayerRutas.unselectFeature(selectedFeatureRuta);
+                                                }
+                                                selectedFeatureRuta = identifiedFeature;
+                                                featureLayerRutas.selectFeature(selectedFeatureRuta);
+                                            }
+                                        }
+                                    }
+                                }
+
+                            } catch (InterruptedException | ExecutionException ex) {
+                                ex.printStackTrace();
+                            }
                         }
                     });
                 }
@@ -382,27 +435,22 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void desplegarInfoLocator(LocatorTask locatorTask) {
-        // Get LocatorInfo from a loaded LocatorTask
         LocatorInfo locatorInfo = locatorTask.getLocatorInfo();
         List<String> resultAttributeNames = new ArrayList<>();
 
-        // Loop through all the attributes available
         for (LocatorAttribute resultAttribute : locatorInfo.getResultAttributes()) {
             resultAttributeNames.add(resultAttribute.getDisplayName());
-            // Use in adapter etc...
             System.out.print(resultAttribute.getName() + ": " + resultAttribute.getDisplayName() + " ");
         }
     }
 
-    //Mostrar puntos, lineas y poligonos
+    // Mostrar puntos, lineas y poligonos
     private void createGraphicsOverlay() {
         mGraphicsOverlay = new GraphicsOverlay();
         mMapView.getGraphicsOverlays().add(mGraphicsOverlay);
     }
 
-    /**
-     * Autenticacion
-     **/
+    // Autenticacion
     private void setupOAuthManager() {
         try {
             OAuthConfiguration oAuthConfiguration =
@@ -415,7 +463,7 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    public void addFeature(Point mapPoint) {
+    public void addFeaturePoint(Point mapPoint, boolean selectPoint) {
 
         Map<String, Object> attributes = new HashMap<>();
         attributes.put("Description", VALOR_BUSQUEDA);
@@ -423,18 +471,23 @@ public class MainActivity extends AppCompatActivity {
         attributes.put("Recommend Attending", "Yes");
         attributes.put("Event_Type", 1);
 
-        Feature addedFeature = serviceFeatureTable.createFeature(attributes, mapPoint);
-        final ListenableFuture<Void> addFeatureFuture = serviceFeatureTable.addFeatureAsync(addedFeature);
+        Feature addedFeature = serviceFeatureTablePuntos.createFeature(attributes, mapPoint);
+        final ListenableFuture<Void> addFeatureFuture = serviceFeatureTablePuntos.addFeatureAsync(addedFeature);
         addFeatureFuture.addDoneListener(() -> {
             try {
                 addFeatureFuture.get();
 
+                if (selectPoint) {
+                    featureLayerPuntos.selectFeature(addedFeature);
+                    selectedFeaturePuntos.add(addedFeature);
+                }
+
                 // apply the edits
-                final ListenableFuture<List<FeatureEditResult>> applyEditsFuture = serviceFeatureTable.applyEditsAsync();
+                final ListenableFuture<List<FeatureEditResult>> applyEditsFuture = serviceFeatureTablePuntos.applyEditsAsync();
                 applyEditsFuture.addDoneListener(() -> {
                     try {
                         final List<FeatureEditResult> featureEditResults = applyEditsFuture.get();
-                        Log.d("# of saved features", "" + featureEditResults.size());
+                        Log.d("addFeaturePoint", "number of saved feature points: " + featureEditResults.size());
 
                     } catch (InterruptedException | ExecutionException e) {
                         e.printStackTrace();
@@ -453,11 +506,11 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void buscarNuestrosPuntos(String key, String value) {
-        featureLayer.clearSelection();
+        featureLayerPuntos.clearSelection();
 
         QueryParameters query = new QueryParameters();
         query.setWhereClause("upper("+key+") LIKE '%" + value+ "%'");
-        final ListenableFuture<FeatureQueryResult> future = serviceFeatureTable.queryFeaturesAsync(query);
+        final ListenableFuture<FeatureQueryResult> future = serviceFeatureTablePuntos.queryFeaturesAsync(query);
         future.addDoneListener(() -> {
             try {
                 FeatureQueryResult result = future.get();
@@ -466,40 +519,120 @@ public class MainActivity extends AppCompatActivity {
                     for (Feature feature : result) {
                         Envelope envelope = feature.getGeometry().getExtent();
                         mMapView.setViewpointGeometryAsync(envelope, 10);
-                        featureLayer.selectFeature(feature);
-                        selectedFeatures.add(feature);
+                        featureLayerPuntos.selectFeature(feature);
+                        selectedFeaturePuntos.add(feature);
                     }
                 } else {
-                    Toast.makeText(this, "No encuentra puntos con Descripcion: " + "Grupo 3", Toast.LENGTH_LONG).show();
+                    Toast.makeText(this, "No encuentra puntos con Descripcion: " + VALOR_BUSQUEDA, Toast.LENGTH_LONG).show();
                 }
             } catch (Exception e) {
-                String error = "Feature search failed for: " + "Grupo 3" + ". Error: " + e.getMessage();
-                Toast.makeText(this, error, Toast.LENGTH_LONG).show();
+                String error = "Feature search failed for: " + VALOR_BUSQUEDA + ". Error: " + e.getMessage();
+                showError(error);
                 Log.e("buscarNuestrosPuntos", error);
             }
         });
     }
 
     private void eliminarNuestrosPuntos(String key, String value) {
-        featureLayer.clearSelection();
+        featureLayerPuntos.clearSelection();
 
         QueryParameters query = new QueryParameters();
         query.setWhereClause("upper("+key+") LIKE '%" + value+ "%'");
-        final ListenableFuture<FeatureQueryResult> future = serviceFeatureTable.queryFeaturesAsync(query);
+        final ListenableFuture<FeatureQueryResult> future = serviceFeatureTablePuntos.queryFeaturesAsync(query);
         future.addDoneListener(() -> {
             try {
                 FeatureQueryResult result = future.get();
                 Iterator<Feature> resultIteratorPrueba = result.iterator();
                 if (resultIteratorPrueba.hasNext()) {
-                    serviceFeatureTable.deleteFeaturesAsync(result).get();
-                    final List<FeatureEditResult> featureEditResults = serviceFeatureTable.applyEditsAsync().get();
+                    serviceFeatureTablePuntos.deleteFeaturesAsync(result).get();
+                    final List<FeatureEditResult> featureEditResults = serviceFeatureTablePuntos.applyEditsAsync().get();
                 } else {
-                    Toast.makeText(this, "No encuentra puntos con Descripcion: " + "Grupo 3", Toast.LENGTH_LONG).show();
+                    Toast.makeText(this, "No encuentra puntos con Descripcion: " + VALOR_BUSQUEDA, Toast.LENGTH_LONG).show();
                 }
             } catch (Exception e) {
-                String error = "Feature search failed for: " + "Grupo 3" + ". Error: " + e.getMessage();
-                Toast.makeText(this, error, Toast.LENGTH_LONG).show();
+                String error = "Feature search failed for: " + VALOR_BUSQUEDA + ". Error: " + e.getMessage();
+                showError(error);
                 Log.e("eliminarNuestrosPuntos", error);
+            }
+        });
+    }
+
+    public void addFeatureRoute(Polyline route, final boolean selectRoute){
+
+        Map<String, Object> attributes = new HashMap<>();
+        attributes.put("Trailtype", 2);
+        attributes.put("Condition", 2);
+        attributes.put("Notes", VALOR_BUSQUEDA);
+        attributes.put("Recordedon", null);
+        attributes.put("Difficulty", 2);
+        attributes.put("Segregation", 0);
+        Polyline ruta = (Polyline) GeometryEngine.removeM(route);
+
+        serviceFeatureTableRutas.loadAsync();
+        serviceFeatureTableRutas.addDoneLoadingListener(() -> {
+
+            Feature addedFeature = serviceFeatureTableRutas.createFeature(attributes, ruta);
+            final ListenableFuture<Void> addFeatureFuture = serviceFeatureTableRutas.addFeatureAsync(addedFeature);
+            addFeatureFuture.addDoneListener(() -> {
+                try {
+                    addFeatureFuture.get();
+
+                    if (selectRoute) {
+                        featureLayerRutas.clearSelection();
+                        featureLayerRutas.selectFeature(addedFeature);
+                        selectedFeatureRuta = addedFeature;
+                    }
+
+                    final ListenableFuture<List<FeatureEditResult>> applyEditsFuture = serviceFeatureTableRutas.applyEditsAsync();
+                    applyEditsFuture.addDoneListener(() -> {
+                        try {
+                            final List<FeatureEditResult> featureEditResults = applyEditsFuture.get();
+                            Log.d("addFeatureRoute", "number of saved feature routes: " + featureEditResults.size());
+                        } catch (InterruptedException | ExecutionException e) {
+                            e.printStackTrace();
+                        }
+                    });
+
+                } catch (InterruptedException | ExecutionException e) {
+                    if (e.getCause() instanceof ArcGISRuntimeException) {
+                        ArcGISRuntimeException agsEx = (ArcGISRuntimeException)e.getCause();
+                        Log.d("addFeatureRoute", "Add Feature Error :"+ agsEx.getErrorCode()+"\n\t"+ agsEx.getMessage());
+                    } else {
+                        e.printStackTrace();
+                    }
+                }
+            });
+        });
+
+    }
+
+    private void buscarNuestrasRutas() {
+        featureLayerRutas.clearSelection();
+        
+        QueryParameters query = new QueryParameters();
+        query.setWhereClause("upper(Notes) LIKE '%" + VALOR_BUSQUEDA + "%'");
+        
+        final ListenableFuture<FeatureQueryResult> future = serviceFeatureTableRutas.queryFeaturesAsync(query);
+        future.addDoneListener(() -> {
+            try {
+                FeatureQueryResult result = future.get();
+
+                Iterator<Feature> resultIterator = result.iterator();
+                if (resultIterator.hasNext()) {
+                    Feature feature = resultIterator.next();
+                    Envelope envelope = feature.getGeometry().getExtent();
+                    mMapView.setViewpointGeometryAsync(envelope, 10);
+                    
+                    featureLayerRutas.selectFeature(feature);
+                    featureLayerRutas.setFeatureVisible(feature, true);
+                } else {
+                    Toast.makeText(this, "No encuentra la ruta con Notes: " + VALOR_BUSQUEDA, Toast.LENGTH_LONG).show();
+                }
+                
+            } catch (Exception e) {
+                String error = "Feature search failed for: " + VALOR_BUSQUEDA + ". Error: " + e.getMessage();
+                showError(error);
+                Log.e("buscarNuestrasRutas", error);
             }
         });
     }
@@ -516,81 +649,95 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void showError(String message) {
-        Log.d("FindRoute", message);
+        Log.d("showError", message);
         Toast.makeText(getApplicationContext(), message, Toast.LENGTH_LONG).show();
     }
 
     private void findRoute() {
-        String routeServiceURI = getResources().getString(R.string.routing_url);
-        final RouteTask solveRouteTask = new RouteTask(getApplicationContext(), routeServiceURI);
-        solveRouteTask.loadAsync();
-        solveRouteTask.addDoneLoadingListener(() -> {
-            if (solveRouteTask.getLoadStatus() == LoadStatus.LOADED) {
-                final ListenableFuture<RouteParameters> routeParamsFuture = solveRouteTask.createDefaultParametersAsync();
-                routeParamsFuture.addDoneListener(() -> {
-                    try {
-                        RouteParameters routeParameters = routeParamsFuture.get();
-                        routeParameters.setFindBestSequence(findBestSequenceForRoute);
-                        List<Stop> stops = new ArrayList<>();
-                        for (int i = 0; i < selectedFeatures.size(); i++) {
-                            if (selectedFeatures.get(i).getGeometry() instanceof Point) {
-                                stops.add(new Stop((Point) selectedFeatures.get(i).getGeometry()));
+        if (selectedFeaturePuntos.size() > 1) {
+            final RouteTask solveRouteTask = new RouteTask(getApplicationContext(), getString(R.string.routing_url));
+            solveRouteTask.loadAsync();
+            solveRouteTask.addDoneLoadingListener(() -> {
+                if (solveRouteTask.getLoadStatus() == LoadStatus.LOADED) {
+                    final ListenableFuture<RouteParameters> routeParamsFuture = solveRouteTask.createDefaultParametersAsync();
+                    routeParamsFuture.addDoneListener(() -> {
+                        try {
+                            RouteParameters routeParameters = routeParamsFuture.get();
+                            routeParameters.setFindBestSequence(findBestSequenceForRoute);
+                            List<Stop> stops = new ArrayList<>();
+                            for (int i = 0; i < selectedFeaturePuntos.size(); i++) {
+                                if (selectedFeaturePuntos.get(i).getGeometry() instanceof Point) {
+                                    stops.add(new Stop((Point) selectedFeaturePuntos.get(i).getGeometry()));
+                                }
                             }
+                            routeParameters.setStops(stops);
+
+                            final ListenableFuture<RouteResult> routeResultFuture = solveRouteTask.solveRouteAsync(routeParameters);
+                            routeResultFuture.addDoneListener(() -> {
+                                progressBar.setVisibility(View.GONE);
+                                try {
+                                    RouteResult routeResult = routeResultFuture.get();
+                                    Route firstRoute = routeResult.getRoutes().get(0);
+
+                                    Polyline routePolyline = firstRoute.getRouteGeometry();
+                                    SimpleLineSymbol routeSymbol = new SimpleLineSymbol(SimpleLineSymbol.Style.SOLID, Color.BLUE, 4.0f);
+                                    Graphic routeGraphic = new Graphic(routePolyline, routeSymbol);
+                                    mGraphicsOverlay.getGraphics().add(routeGraphic);
+
+                                    addFeatureRoute(routePolyline, true);
+
+                                } catch (InterruptedException | ExecutionException e) {
+                                    showError("Solve RouteTask failed " + e.getMessage());
+                                }
+                            });
+
+                        } catch (InterruptedException | ExecutionException e) {
+                            showError("Cannot create RouteTask parameters " + e.getMessage());
                         }
-                        routeParameters.setStops(stops);
-                        // Code from the next step goes here
-                        final ListenableFuture<RouteResult> routeResultFuture = solveRouteTask.solveRouteAsync(routeParameters);
-                        routeResultFuture.addDoneListener(() -> {
-                            progressBar.setVisibility(View.GONE);
-                            try {
-                                RouteResult routeResult = routeResultFuture.get();
-                                Route firstRoute = routeResult.getRoutes().get(0);
-                                // Code from the next step goes here
-                                Polyline routePolyline = firstRoute.getRouteGeometry();
-                                SimpleLineSymbol routeSymbol = new SimpleLineSymbol(SimpleLineSymbol.Style.SOLID, Color.BLUE, 4.0f);
-                                Graphic routeGraphic = new Graphic(routePolyline, routeSymbol);
-                                mGraphicsOverlay.getGraphics().add(routeGraphic);
-
-                            } catch (InterruptedException | ExecutionException e) {
-                                showError("Solve RouteTask failed " + e.getMessage());
-                            }
-                        });
-
-                    } catch (InterruptedException | ExecutionException e) {
-                        showError("Cannot create RouteTask parameters " + e.getMessage());
-                    }
-                });
-            } else {
-                showError("Unable to load RouteTask " + solveRouteTask.getLoadStatus().toString());
-            }
-        });
+                    });
+                } else {
+                    showError("Unable to load RouteTask " + solveRouteTask.getLoadStatus().toString());
+                }
+            });
+        } else {
+            showError("Selecciona al menos 2 puntos para crear una ruta");
+        }
     }
 
-    private void getPointsFromMap() {
+    private void simulateTour() {
         speedSeekBar.setVisibility(View.VISIBLE);
         Log.d("mGraphicsOverlay size", mGraphicsOverlay.getGraphics().size() + " ");
 
-        for (int i = 0; i < mGraphicsOverlay.getGraphics().size(); i++) {
-            Graphic g = mGraphicsOverlay.getGraphics().get(i);
-            if (g.getGeometry() != null && g.getGeometry().getInternal() != null &&
-                    g.getGeometry().getInternal().w() != null && !g.getGeometry().getInternal().w().equals("")) {
-                Path path = new Gson().fromJson(g.getGeometry().getInternal().w(), Path.class);
-                if (path.getPaths() != null && path.getPaths().length > 0) {
-                    Log.d("Graphic " + i, ", " + g.getGeometry().getInternal().w());
-                    List<Marker> markerPoints = path.getPoints();
-                    Log.d("path.getPoints", " size " + markerPoints.size());
+        Geometry g = null;
+        if (selectedFeatureRuta != null) {
+            g = selectedFeatureRuta.getGeometry();
+            parsePath(g, 0, Marker.REPRESENTATION_UTM);
+        } else {
+            for (int i = 0; i < mGraphicsOverlay.getGraphics().size(); i++) {
+                g = mGraphicsOverlay.getGraphics().get(i).getGeometry();
+                parsePath(g, i, Marker.REPRESENTATION_WGS84);
+            }
+        }
+    }
 
-                    if (!markerPoints.isEmpty()) {
-                        distTotal = Path.largoCaminoEnKm(markerPoints);
-                        int[] speeds = Path.getSpeeds(distTotal);
-                        int adequateSpeed = speeds[Path.getMediumSpeedIndex()];
-                        if (speedSeekBar != null) {
-                            adequateSpeed = Path.getSpeedByIndex(distTotal, speedSeekBar.getProgress());
-                        }
-                        request = new RoutePointRequestModel(markerPoints, 0, adequateSpeed, SIMULATION_REFRESH_RATE);
-                        request.resultMarker = markerPoints.get(0);
-                        showPointByInterval(request);
+    private void parsePath(Geometry g, int i, int representation) {
+        if (g instanceof Polyline && g.getInternal() != null && g.getInternal().w() != null && !g.getInternal().w().equals("")) {
+            Path path = new Gson().fromJson(g.getInternal().w(), Path.class);
+            if (path.getPaths() != null && path.getPaths().length > 0) {
+                Log.d("Graphic " + i, ", " + g.getInternal().w());
+                List<Marker> markerPoints = path.getPoints(representation);
+                Log.d("path.getPoints", " size: " + markerPoints.size());
+
+                if (!markerPoints.isEmpty()) {
+                    distTotal = Path.largoCaminoEnKm(markerPoints);
+                    int[] speeds = Path.getSpeeds(distTotal);
+                    int adequateSpeed = speeds[Path.getMediumSpeedIndex()];
+                    if (speedSeekBar != null) {
+                        adequateSpeed = Path.getSpeedByIndex(distTotal, speedSeekBar.getProgress());
                     }
+                    request = new RoutePointRequestModel(markerPoints, 0, adequateSpeed, SIMULATION_REFRESH_RATE);
+                    request.resultMarker = markerPoints.get(0);
+                    showPointByInterval(request);
                 }
             }
         }
@@ -600,7 +747,7 @@ public class MainActivity extends AppCompatActivity {
         if (request.resultMarker != null) {
             showCurrentPositionHandler = new Handler();
             runnable = () -> {
-                showPosition(request.resultMarker, SimpleMarkerSymbol.Style.DIAMOND, 12);
+                showPosition(request.resultMarker, currentPositionStyle, currentPositionSize);
                 showPointByInterval(Path.nextPoint(request));
             };
             showCurrentPositionHandler.postDelayed(runnable, request.getRefreshRate());
@@ -617,10 +764,16 @@ public class MainActivity extends AppCompatActivity {
         SimpleMarkerSymbol sms = new SimpleMarkerSymbol(style, currentPositionColor, size);
         Graphic g = new Graphic(currentPositionPoint, sms);
         mGraphicsOverlay.getGraphics().add(g);
-        if (mGraphicsOverlay.getGraphics().contains(g)) {
-            mGraphicsOverlay.getGraphics().remove(currentPosition);
-        }
+        mGraphicsOverlay.getGraphics().remove(currentPosition);
         currentPosition = g;
+    }
+
+    @OnClick(R.id.create_point)
+    protected void onCreatePointsClicked() {
+        addMarkerFromMap = !addMarkerFromMap;
+        addPointToggleText.setText(addMarkerFromMap ? getString(R.string.add_marker_mode) : getString(R.string.select_mode));
+        modeText.setText(addMarkerFromMap ? getString(R.string.select_mode) : getString(R.string.add_marker_mode));
+        hideBottomSheet();
     }
 
     @OnClick(R.id.clear_points)
@@ -636,16 +789,21 @@ public class MainActivity extends AppCompatActivity {
         hideBottomSheet();
     }
 
-    @OnClick(R.id.load_routes)
+    @OnClick(R.id.deselect_all)
     protected void onLoadRoutesClicked() {
-        // TODO: cargar rutas
+        selectedFeaturePuntos.clear();
+        featureLayerPuntos.clearSelection();
+        selectedFeatureRuta = null;
+        featureLayerRutas.clearSelection();
+        currentPosition = null;
+        speedSeekBar.setVisibility(View.INVISIBLE);
         hideBottomSheet();
     }
 
     @OnClick(R.id.clear_routes)
     protected void onClearRouteClicked() {
-        featureLayer.clearSelection();
-        selectedFeatures.clear();
+        selectedFeaturePuntos.clear();
+        featureLayerPuntos.clearSelection();
         currentPosition = null;
         speedSeekBar.setVisibility(View.INVISIBLE);
         mGraphicsOverlay.getGraphics().clear(); // TODO: limpiar tabla de rutas
@@ -657,7 +815,7 @@ public class MainActivity extends AppCompatActivity {
 
     @OnClick(R.id.simulate_tour)
     protected void onSimulateTourClicked() {
-        getPointsFromMap();
+        simulateTour();
         hideBottomSheet();
     }
 
@@ -682,6 +840,20 @@ public class MainActivity extends AppCompatActivity {
     @OnClick(R.id.text_close_sheet)
     protected void onCancelBottomSheetClicked() {
         hideBottomSheet();
+        String url = "https://services.arcgisonline.com/arcgis/rest/services/Demographics/USA_1990-2000_Population_Change/MapServer/3/query";
+        String params = "f=json&spatialRel=esriSpatialRelIntersects&returnIdsOnly=true&geometry=%7B%22rings%22%3A%5B%5B%5B-93.266744044856253%2C44.9847001553116%5D%2C%5B-93.266596845520226%2C44.984694070854012%5D%2C%5B-93.266451636895056%2C44.98467589976687%5D%2C%5B-93.266310382765724%2C44.98464588779413%5D%2C%5B-93.266174993429686%2C44.984604440814181%5D%2C%5B-93.266047299859295%2C44.984552119350106%5D%2C%5B-93.265929028937506%2C44.984489630988236%5D%2C%5B-93.265821780102343%2C44.984417820807749%5D%2C%5B-93.26572700371571%2C44.984337659950775%5D%2C%5B-93.265645981449495%2C44.984250232487547%5D%2C%5B-93.265579808954016%2C44.984156720754534%5D%2C%5B-93.265529381043223%2C44.984058389363696%5D%2C%5B-93.265495379596842%2C44.983956568099423%5D%2C%5B-93.265478264343017%2C44.983852633934283%5D%2C%5B-93.265478266645687%2C44.983747992407096%5D%2C%5B-93.265495386380721%2C44.983644058615013%5D%2C%5B-93.265529391942579%2C44.983542238076737%5D%2C%5B-93.265579823381287%2C44.983443907725714%5D%2C%5B-93.26564599862688%2C44.983350397290266%5D%2C%5B-93.265727022717172%2C44.983262971312399%5D%2C%5B-93.26582179990352%2C44.983182812048504%5D%2C%5B-93.265929048470909%2C44.983111003482946%5D%2C%5B-93.266047318071855%2C44.98304851667077%5D%2C%5B-93.266175009339591%2C44.982996196607616%5D%2C%5B-93.266310395515248%2C44.982954750804318%5D%2C%5B-93.266451645796863%2C44.982924739720495%5D%2C%5B-93.266596850094416%2C44.982906569186611%5D%2C%5B-93.266744044856253%2C44.982900484916811%5D%2C%5B-93.26689123961809%2C44.982906569186611%5D%2C%5B-93.267036443915643%2C44.982924739720495%5D%2C%5B-93.267177694197258%2C44.982954750804318%5D%2C%5B-93.267313080372915%2C44.982996196607616%5D%2C%5B-93.267440771640651%2C44.98304851667077%5D%2C%5B-93.267559041241597%2C44.983111003482946%5D%2C%5B-93.267666289808986%2C44.983182812048504%5D%2C%5B-93.267761066995334%2C44.983262971312399%5D%2C%5B-93.267842091085626%2C44.983350397290259%5D%2C%5B-93.267908266331219%2C44.983443907725714%5D%2C%5B-93.267958697769927%2C44.983542238076744%5D%2C%5B-93.267992703331785%2C44.983644058615013%5D%2C%5B-93.268009823066819%2C44.983747992407096%5D%2C%5B-93.268009825369489%2C44.983852633934283%5D%2C%5B-93.267992710115664%2C44.983956568099423%5D%2C%5B-93.267958708669298%2C44.984058389363703%5D%2C%5B-93.26790828075849%2C44.984156720754534%5D%2C%5B-93.267842108263011%2C44.984250232487547%5D%2C%5B-93.267761085996796%2C44.984337659950768%5D%2C%5B-93.267666309610163%2C44.984417820807749%5D%2C%5B-93.267559060775%2C44.984489630988229%5D%2C%5B-93.267440789853211%2C44.984552119350106%5D%2C%5B-93.26731309628282%2C44.984604440814181%5D%2C%5B-93.267177706946782%2C44.984645887794123%5D%2C%5B-93.26703645281745%2C44.98467589976687%5D%2C%5B-93.26689124419228%2C44.984694070854012%5D%2C%5B-93.266744044856253%2C44.9847001553116%5D%5D%5D%2C%22spatialReference%22%3A%7B%22wkid%22%3A4326%7D%7D&geometryType=esriGeometryPolygon&";
+        APIUtils apiUtils = new APIUtils();
+        apiUtils.callAPI(url, params, new APIUtils.View.APICallback() {
+            @Override
+            public void onSuccess(String response) {
+
+            }
+
+            @Override
+            public void onError(String error) {
+
+            }
+        });
     }
 
     public void hideBottomSheet() {
@@ -710,12 +882,12 @@ public class MainActivity extends AppCompatActivity {
         Point point = mMapView.screenToLocation(p);
         Marker marker = new Marker(point.getX(), point.getY(), Marker.REPRESENTATION_UTM);
         ViewGroup vg = (ViewGroup) findViewById(android.R.id.content);
-        marker.showAddFromMapDialog(MainActivity.this, vg, point, markers, new Marker.Viewer.AddMarkerCallback() {
+        marker.showAddFromMapDialog(MainActivity.this, vg, point, new Marker.Viewer.AddMarkerCallback() {
             @Override
             public void onMarkerAdded(Marker marker) {
                 Log.d("onMarkerAdded", "");
                 Toast.makeText(MainActivity.this, getString(R.string.marker_added), Toast.LENGTH_LONG).show();
-                addFeature(point);
+                addFeaturePoint(point, true);
                 //showMarkers(markers);
             }
 
@@ -730,12 +902,12 @@ public class MainActivity extends AppCompatActivity {
         Marker marker = new Marker(0, 0, Marker.REPRESENTATION_WGS84);
         ViewGroup vg = (ViewGroup) findViewById(android.R.id.content);
         Point point = new Point(0, 0);
-        marker.showAddFromLatLongDialog(MainActivity.this, vg, point, markers, new Marker.Viewer.AddMarkerCallback() {
+        marker.showAddFromLatLongDialog(MainActivity.this, vg, point, new Marker.Viewer.AddMarkerCallback() {
             @Override
             public void onMarkerAdded(Marker marker) {
                 Log.d("onMarkerAdded", "");
                 Toast.makeText(MainActivity.this, getString(R.string.marker_added), Toast.LENGTH_LONG).show();
-                addFeature(new Point(marker.lon, marker.lat));
+                addFeaturePoint(new Point(marker.lon, marker.lat), true);
                 //showMarkers(markers);
             }
 

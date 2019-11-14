@@ -67,27 +67,27 @@ public class Marker {
         this.representation = representation;
     }
 
-    public void showAddFromMapDialog(Context context, ViewGroup vg, Point point, List<Marker> markers, Viewer.AddMarkerCallback callback) {
+    public void showAddFromMapDialog(Context context, ViewGroup vg, Point point, Viewer.AddMarkerCallback callback) {
         View viewInflated = LayoutInflater.from(context).inflate(R.layout.view_add_point_on_map, vg, false);
         final TextView latMarker = viewInflated.findViewById(R.id.lat_marcador);
         final TextView longMarker = viewInflated.findViewById(R.id.long_marcador);
         latMarker.setText(GeographicUtils.Point2Lat(point));
         longMarker.setText(GeographicUtils.Point2Long(point));
-        showDialog(context, point, markers, callback, viewInflated, FROM_MAP);
+        showDialog(context, point, callback, viewInflated, FROM_MAP);
     }
 
-    public void showAddFromLatLongDialog(Context context, ViewGroup vg, Point point, List<Marker> markers, Viewer.AddMarkerCallback callback) {
+    public void showAddFromLatLongDialog(Context context, ViewGroup vg, Point point, Viewer.AddMarkerCallback callback) {
         View viewInflated = LayoutInflater.from(context).inflate(R.layout.view_add_point_from_lat_long, vg, false);
-        showDialog(context, point, markers, callback, viewInflated, FROM_LAT_LONG);
+        showDialog(context, point, callback, viewInflated, FROM_LAT_LONG);
     }
 
-    private void showDialog(Context context, Point point, List<Marker> markers, Viewer.AddMarkerCallback callback, View viewInflated, final int type) {
+    private void showDialog(Context context, Point point, Viewer.AddMarkerCallback callback, View viewInflated, final int type) {
         this.addMarkerCallback = callback;
         final EditText name = viewInflated.findViewById(R.id.nombre_marcador);
         final Button cancel = viewInflated.findViewById(R.id.cancel_edit_marker);
         final Button accept = viewInflated.findViewById(R.id.accept_edit_marker);
         AlertDialog.Builder AD = new AlertDialog.Builder(context)
-                .setCancelable(false)
+                .setCancelable(true)
                 .setView(viewInflated);
 
         final AlertDialog ADClose = AD.create();
@@ -101,7 +101,6 @@ public class Marker {
             if (type == FROM_MAP) {
                 this.lat = point.getY();
                 this.lon = point.getX();
-                markers.add(this);
                 ADClose.dismiss();
                 addMarkerCallback.onMarkerAdded(this);
             } else {
@@ -112,7 +111,6 @@ public class Marker {
                     this.lat = Float.parseFloat(latMarker.getText().toString());
                     try {
                         this.lon = Float.parseFloat(longMarker.getText().toString());
-                        markers.add(this);
                         ADClose.dismiss();
                         addMarkerCallback.onMarkerAdded(this);
                     } catch (Exception e) {

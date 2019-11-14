@@ -8,10 +8,12 @@
     <color name="black">#000000</color>
     <color name="grey">#858585</color>
     <color name="light_grey">#AAAAAA</color>
+    <color name="very_light_grey">#88D4D4D4</color>
     <color name="white">#FFFFFF</color>
     <color name="transparent">#00FFFFFF</color>
     <color name="semitransparent">#BBCCCCCC</color>
 
+    <color name="create_blue">#1414B9</color>
     <color name="danger_red">#F32013</color>
     <color name="success_green">#50DD50</color>
 
