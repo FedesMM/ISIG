@@ -1,5 +1,8 @@
 package com.isig.lab2.utils;
 
+import android.app.Activity;
+import android.content.Context;
+import android.util.DisplayMetrics;
 import android.util.Log;
 
 import com.esri.arcgisruntime.data.Feature;

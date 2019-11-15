@@ -43,8 +43,11 @@
     <string name="url_server_puntos">http://sampleserver5.arcgisonline.com/arcgis/rest/services/LocalGovernment/Events/FeatureServer/0</string>
     <string name="url_server_rutas">http://sampleserver5.arcgisonline.com/arcgis/rest/services/LocalGovernment/Recreation/FeatureServer/1</string>
     <string name="url_server_condados">http://services.arcgisonline.com/arcgis/rest/services/Demographics/USA_1990-2000_Population_Change/MapServer/3</string>
+    <string name="url_server_intersects">https://services.arcgisonline.com/arcgis/rest/services/Demographics/USA_1990-2000_Population_Change/MapServer/3/query</string>
     <string name="url_server_busqueda">http://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer</string>
     <string name="page_url">"https://www.arcgis.com"</string>
+
+    <string name="map_to_pdf_text">Exportar mapa a PDF</string>
 
     <!-- Lat Long -->
     <string name="no_lat_long"> - </string>

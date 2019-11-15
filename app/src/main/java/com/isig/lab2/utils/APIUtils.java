@@ -12,19 +12,13 @@ import okhttp3.Response;
 
 public class APIUtils {
 
-    View.APICallback callback;
-
-    public APIUtils() {
-
-    }
-
-    public void callAPI(final String url, final String params, final View.APICallback callback) {
-        this.callback = callback;
+    public static void callAPI(final String fullUri, final String url, final String params, final View.APICallback callback) {
         OkHttpClient client = new OkHttpClient();
 
+        String uri = (fullUri != null) ? fullUri : url + "?" + params;
         try {
             Request request = new Request.Builder()
-                    .url(url + "?" + params)
+                    .url(uri)
                     .build();
 
             client.newCall(request).enqueue(new Callback() {

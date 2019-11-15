@@ -130,6 +130,19 @@
         android:textSize="18sp"/>
 
     <TextView
+        android:id="@+id/map_to_pdf_text"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="10dp"
+        android:layout_marginEnd="12dp"
+        android:layout_marginStart="12dp"
+        android:background="@drawable/white_rounded_corner_background"
+        android:gravity="center"
+        android:padding="10dp"
+        android:text="@string/map_to_pdf_text"
+        android:textSize="18sp"/>
+
+    <TextView
         android:id="@+id/text_config"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"

@@ -12,6 +12,7 @@
     <color name="white">#FFFFFF</color>
     <color name="transparent">#00FFFFFF</color>
     <color name="semitransparent">#BBCCCCCC</color>
+    <color name="blue_trans">#800000FF</color>
 
     <color name="create_blue">#1414B9</color>
     <color name="danger_red">#F32013</color>

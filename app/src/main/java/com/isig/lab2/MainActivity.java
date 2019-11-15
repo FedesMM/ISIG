@@ -1,7 +1,9 @@
 package com.isig.lab2;
 
 import android.annotation.SuppressLint;
+import android.content.Intent;
 import android.graphics.Color;
+import android.net.Uri;
 import android.os.Bundle;
 
 import com.esri.arcgisruntime.ArcGISRuntimeException;
@@ -11,10 +13,16 @@ import com.esri.arcgisruntime.data.FeatureEditResult;
 import com.esri.arcgisruntime.data.FeatureQueryResult;
 import com.esri.arcgisruntime.data.QueryParameters;
 import com.esri.arcgisruntime.data.ServiceFeatureTable;
+import com.esri.arcgisruntime.geometry.AreaUnit;
+import com.esri.arcgisruntime.geometry.AreaUnitId;
 import com.esri.arcgisruntime.geometry.Envelope;
+import com.esri.arcgisruntime.geometry.GeodeticCurveType;
 import com.esri.arcgisruntime.geometry.Geometry;
 import com.esri.arcgisruntime.geometry.GeometryEngine;
+import com.esri.arcgisruntime.geometry.LinearUnit;
+import com.esri.arcgisruntime.geometry.LinearUnitId;
 import com.esri.arcgisruntime.geometry.Point;
+import com.esri.arcgisruntime.geometry.Polygon;
 import com.esri.arcgisruntime.geometry.Polyline;
 import com.esri.arcgisruntime.geometry.SpatialReference;
 import com.esri.arcgisruntime.layers.FeatureLayer;
@@ -30,6 +38,7 @@ import com.esri.arcgisruntime.mapping.view.MapView;
 import com.esri.arcgisruntime.security.AuthenticationManager;
 import com.esri.arcgisruntime.security.DefaultAuthenticationChallengeHandler;
 import com.esri.arcgisruntime.security.OAuthConfiguration;
+import com.esri.arcgisruntime.symbology.SimpleFillSymbol;
 import com.esri.arcgisruntime.symbology.SimpleLineSymbol;
 import com.esri.arcgisruntime.symbology.SimpleMarkerSymbol;
 import com.esri.arcgisruntime.symbology.TextSymbol;
@@ -78,11 +87,20 @@ import java.util.concurrent.ExecutionException;
 
 import com.google.gson.Gson;
 import com.isig.lab2.models.Configuration;
+import com.isig.lab2.models.ExportOptions;
+import com.isig.lab2.models.Extent;
+import com.isig.lab2.models.Intersecciones;
+import com.isig.lab2.models.MapOptions;
 import com.isig.lab2.models.Marker;
+import com.isig.lab2.models.MySpatialReference;
+import com.isig.lab2.models.OperationalLayers;
+import com.isig.lab2.models.PDFResult;
 import com.isig.lab2.models.Path;
+import com.isig.lab2.models.PdfRequest;
 import com.isig.lab2.models.RoutePointRequestModel;
 import com.isig.lab2.utils.APIUtils;
 import com.isig.lab2.utils.GeographicUtils;
+import com.isig.lab2.utils.Utils;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -97,9 +115,19 @@ public class MainActivity extends AppCompatActivity {
     private List<Feature> selectedFeaturePuntos = new ArrayList<>();
 
     // Rutas
-    private ServiceFeatureTable serviceFeatureTableRutas;
     private FeatureLayer featureLayerRutas;
+    private ServiceFeatureTable serviceFeatureTableRutas;
     private Feature selectedFeatureRuta = null;
+
+    // Condados
+    private ServiceFeatureTable serviceFeatureTableCondados;
+    private FeatureLayer featureLayerCondados;
+    public List<Graphic> viejosCondadosGraficos = new ArrayList<>();
+    public AreaUnit km2Unit = new AreaUnit(AreaUnitId.SQUARE_KILOMETERS);
+    public LinearUnit mUnit = new LinearUnit(LinearUnitId.METERS);
+
+    private GraphicsOverlay mGraphicsCondados;
+    private Graphic currentBuffer;
 
     private GraphicsOverlay mGraphicsOverlay;
     private LocatorTask mLocatorTask = null;
@@ -165,6 +193,11 @@ public class MainActivity extends AppCompatActivity {
         serviceFeatureTableRutas = new ServiceFeatureTable(getString(R.string.url_server_rutas));
         featureLayerRutas = new FeatureLayer(serviceFeatureTableRutas);
         map.getOperationalLayers().add(featureLayerRutas);
+
+        serviceFeatureTableCondados = new ServiceFeatureTable(getString(R.string.url_server_condados));
+        featureLayerCondados = new FeatureLayer(serviceFeatureTableCondados);
+        featureLayerCondados.setVisible(false);
+        map.getOperationalLayers().add(featureLayerCondados);
 
         mMapView.setMap(map);
 
@@ -422,6 +455,9 @@ public class MainActivity extends AppCompatActivity {
                 mGeocodeParameters.setMaxResults(1);
                 mGraphicsOverlay = new GraphicsOverlay();
                 mMapView.getGraphicsOverlays().add(mGraphicsOverlay);
+                mGraphicsCondados = new GraphicsOverlay();
+                mMapView.getGraphicsOverlays().add(mGraphicsCondados);
+
                 Log.d("Init", "Cargo el locator");
                 progressBar.setVisibility(View.GONE);
                 locatorLoaded = true;
@@ -748,6 +784,7 @@ public class MainActivity extends AppCompatActivity {
             showCurrentPositionHandler = new Handler();
             runnable = () -> {
                 showPosition(request.resultMarker, currentPositionStyle, currentPositionSize);
+                showBuffer(request.resultMarker);
                 showPointByInterval(Path.nextPoint(request));
             };
             showCurrentPositionHandler.postDelayed(runnable, request.getRefreshRate());
@@ -766,6 +803,180 @@ public class MainActivity extends AppCompatActivity {
         mGraphicsOverlay.getGraphics().add(g);
         mGraphicsOverlay.getGraphics().remove(currentPosition);
         currentPosition = g;
+    }
+
+    private void showBuffer(Marker m) {
+        Log.d("showBuffer: ", "Entro con el marker (" + m.lon + ", " + m.lat + ")");
+        double radio = 1000.0;
+
+        Point center = new Point(m.lon, m.lat, m.getSpatialReference());
+        Geometry bufferGeometryGeodesic = GeometryEngine.bufferGeodetic(center, radio, mUnit, Double.NaN, GeodeticCurveType.GEODESIC);
+        Log.d("showBuffer", "Creo el buffer: " + bufferGeometryGeodesic.toJson());
+
+        SimpleLineSymbol geodesicOutlineSymbol = new SimpleLineSymbol(SimpleLineSymbol.Style.SOLID, Color.BLACK, 2);
+        SimpleFillSymbol geodesicBufferFillSymbol = new SimpleFillSymbol(SimpleFillSymbol.Style.SOLID,  0x88FF0000, geodesicOutlineSymbol);
+
+        Graphic geodesicBufferGraphic = new Graphic(bufferGeometryGeodesic, geodesicBufferFillSymbol);
+
+        mGraphicsCondados.getGraphics().add(geodesicBufferGraphic);
+        mGraphicsCondados.getGraphics().remove(currentBuffer);
+        currentBuffer = geodesicBufferGraphic;
+
+        buscarCondados((Polygon) bufferGeometryGeodesic);
+    }
+
+    private void buscarCondados(Polygon buffer) {
+
+        String uri = Uri.parse(getString(R.string.url_server_intersects))
+                .buildUpon()
+                .appendQueryParameter("geometry", buffer.toJson())
+                .appendQueryParameter("geometryType", "esriGeometryPolygon")
+                .appendQueryParameter("spatialRel", "esriSpatialRelIntersects")
+                .appendQueryParameter("f", "json")
+                .build().toString();
+
+        Log.i("uri", uri);
+
+        APIUtils.callAPI(uri,null, null, new APIUtils.View.APICallback() {
+            @Override
+            public void onSuccess(String response) {
+                SimpleLineSymbol condadoLineaSimbolo = new SimpleLineSymbol(SimpleLineSymbol.Style.SOLID, Color.BLACK, 2);
+                SimpleFillSymbol condadoRellenoSimbolo = new SimpleFillSymbol(SimpleFillSymbol.Style.SOLID,  getColor(R.color.blue_trans),
+                        condadoLineaSimbolo);
+                List<Graphic> nuevosCondadosGraficos= new ArrayList<>();
+                Geometry condadoGeometria, interseccionGeometria;
+                Graphic condadoGrafico;
+                double areaCondado=0,  areaInterseccion=0, areaCondadoG=0,  areaInterseccionG=0;
+                //List<Graphic> viejosCondadosGraficos= new ArrayList<>();
+
+                //Log.d("requestPosta", "onResponse:\n\t"+response);
+                Intersecciones respuesta = new Gson().fromJson(response, Intersecciones.class);
+
+                //Recorro todos los condados que itnerseccionan con el buffer
+                for (int iCondado = 0; iCondado < respuesta.features.size(); iCondado++) {
+                    //Creo el grafico y lo agrego a la lista nuevos graficos
+                    Log.d("requestPosta", "Parseo:\n\t"+respuesta.features.get(iCondado).geometry.toString());
+                    Log.d("requestPosta", "SpatialReference.buffer:\n\t"+buffer.getSpatialReference().toJson());
+                    SpatialReference sp = SpatialReference.create(respuesta.spatialReference.get("wkid"));
+                    condadoGeometria = Geometry.fromJson(respuesta.features.get(iCondado).geometry.toString(),sp);
+                    Log.d("requestPosta", "SpatialReference.condadoGeometry:\n\t"+condadoGeometria.getSpatialReference().toJson());
+                    condadoGeometria=GeometryEngine.project(condadoGeometria, buffer.getSpatialReference());
+                    Log.d("requestPosta", "SpatialReference.CondadoGemetry.project:\n\t"+condadoGeometria.getSpatialReference().toJson());
+                    areaCondado= GeometryEngine.area((Polygon) condadoGeometria);
+                    areaCondadoG= GeometryEngine.areaGeodetic(condadoGeometria, km2Unit,GeodeticCurveType.GEODESIC);
+                    condadoGrafico = new Graphic(condadoGeometria, condadoRellenoSimbolo);
+                    nuevosCondadosGraficos.add(condadoGrafico);
+                    //Hallo la interseccion
+                    interseccionGeometria = GeometryEngine.intersection(buffer,condadoGeometria);
+                    areaInterseccion = GeometryEngine.area((Polygon) interseccionGeometria);
+                    areaInterseccionG = GeometryEngine.areaGeodetic(interseccionGeometria, km2Unit,GeodeticCurveType.GEODESIC);
+                    Log.d("requestPosta", "Areas            (condado, interseccion): ("+areaCondado+","+areaInterseccion+")");
+                    Log.d("requestPosta", "AreasGeodetic    (condado, interseccion): ("+areaCondadoG+","+areaInterseccionG+")");
+                }
+                Log.d("requestPosta", "Tengo que borrar "+viejosCondadosGraficos.size()+"condados viejos");
+                //Para cada condado viejo
+                for (int iCondadoViejo = 0; iCondadoViejo < viejosCondadosGraficos.size(); iCondadoViejo++) {
+                    //Si ya no es parte de los condados nuevos
+                    if (!nuevosCondadosGraficos.contains(viejosCondadosGraficos.get(iCondadoViejo))) {
+                        //Dejo de mostrarlo
+                        mGraphicsOverlay.getGraphics().remove(viejosCondadosGraficos.get(iCondadoViejo));
+                    }
+                }
+                Log.d("requestPosta", "Tengo que agregar "+nuevosCondadosGraficos.size()+"condados viejos");
+                //Para cada condado nuevo
+                for (int iCondadoNuevo = 0; iCondadoNuevo < nuevosCondadosGraficos.size(); iCondadoNuevo++) {
+                    //Si no lo estoy mostrando
+                    if (!mGraphicsOverlay.getGraphics().contains(nuevosCondadosGraficos.get(iCondadoNuevo))) {
+                        Log.d("requestPosta", "Agregando Condado:\n\t"+nuevosCondadosGraficos.get(iCondadoNuevo).toString());
+                        //Empiezo a mostrarlo
+                        mGraphicsOverlay.getGraphics().add(nuevosCondadosGraficos.get(iCondadoNuevo));
+                    }
+
+                }
+                //Guardo en la lista de Condados viejos los condados nuevos para usar en el proximo refresh
+                viejosCondadosGraficos=nuevosCondadosGraficos;
+
+                //tengo que obtener los features de cada condado
+
+            }
+
+            @Override
+            public void onError(String error) {
+
+            }
+        });
+    }
+
+    public void map2PDF() {
+
+        android.graphics.Point p1 = new android.graphics.Point(0, 0);
+        android.graphics.Point p4 = new android.graphics.Point(Utils.getScreenWidth(this), Utils.getScreenHeight(this));
+
+        Point point1 = mMapView.screenToLocation(p1);
+        Point point4 = mMapView.screenToLocation(p4);
+
+        Geometry g1 = GeometryEngine.project(point1, SpatialReference.create(4326));
+        Geometry g4 = GeometryEngine.project(point4, SpatialReference.create(4326));
+
+        Log.d("map2PDF", " g1: " + ((Point) g1).getY() + ", " + ((Point) g1).getX() + ", g4: " + ((Point) g4).getY() + ", " + ((Point) g4).getX());
+        Log.d("map2PDF", " scale: " + mMapView.getMapScale());
+
+        PdfRequest request = new PdfRequest();
+        Extent extent = new Extent(p1.x, p1.y, p4.x, p4.y);
+        request.mapOptions = new MapOptions();
+        request.mapOptions.extent = extent;
+        request.mapOptions.scale = mMapView.getMapScale(); // TODO, funca esto? es asi?
+        Map<String, Integer> map = new HashMap<>();
+        request.mapOptions.spatialReference = new MySpatialReference(102100);
+
+        OperationalLayers layerPuntos = new OperationalLayers();
+        layerPuntos.title = "capa puntos";
+        layerPuntos.url = getString(R.string.url_server_puntos);
+
+        OperationalLayers layerRutas = new OperationalLayers();
+        layerRutas.title = "capa rutas";
+        layerRutas.url = getString(R.string.url_server_rutas);
+
+        request.operationalLayers = new ArrayList<>();
+        request.operationalLayers.add(layerPuntos);
+        request.operationalLayers.add(layerRutas);
+
+        request.exportOptions = new ExportOptions();
+        request.exportOptions.dpi = 96;
+        request.exportOptions.outputSize = new ArrayList<>();
+        request.exportOptions.outputSize.add(Math.round(p4.y));
+        request.exportOptions.outputSize.add(Math.round(p4.x));
+
+
+        Log.d("map2PDF", "request: " + request.toString());
+
+        String uri = Uri.parse("https://sampleserver5.arcgisonline.com/arcgis/rest/services/Utilities/PrintingTools/GPServer/Export Web Map Task/execute?")// todo, 5 o 6?
+                .buildUpon()
+                .appendQueryParameter("Web_Map_as_JSON", request.toString())
+                .appendQueryParameter("returnZ", "false")
+                .appendQueryParameter("returnM", "false")
+                .appendQueryParameter("returnTrueCurves", "false")
+                .appendQueryParameter("returnFeatureCollection", "false")
+                .build().toString();
+
+        Log.d("map2PDF", "uri: "+uri);
+
+        APIUtils.callAPI(uri,null, null, new APIUtils.View.APICallback() {
+            @Override
+            public void onSuccess(String response) {
+                PDFResult res = new Gson().fromJson(response, PDFResult.class);
+                String pdfUrl = res.getPdfUrl();
+                if (pdfUrl != null) {
+                    Intent browserIntent = new Intent(Intent.ACTION_VIEW, Uri.parse(pdfUrl));
+                    startActivity(browserIntent);
+                }
+            }
+
+            @Override
+            public void onError(String error) {
+                Log.e("map2PDF", "onError: " + error);
+            }
+        });
     }
 
     @OnClick(R.id.create_point)
@@ -819,6 +1030,12 @@ public class MainActivity extends AppCompatActivity {
         hideBottomSheet();
     }
 
+    @OnClick(R.id.map_to_pdf_text)
+    protected void onMapToPDFClicked() {
+        map2PDF();
+        hideBottomSheet();
+    }
+
     @OnClick(R.id.text_config)
     protected void onConfigClicked() {
         ViewGroup vg = (ViewGroup) findViewById(android.R.id.content);
@@ -840,20 +1057,6 @@ public class MainActivity extends AppCompatActivity {
     @OnClick(R.id.text_close_sheet)
     protected void onCancelBottomSheetClicked() {
         hideBottomSheet();
-        String url = "https://services.arcgisonline.com/arcgis/rest/services/Demographics/USA_1990-2000_Population_Change/MapServer/3/query";
-        String params = "f=json&spatialRel=esriSpatialRelIntersects&returnIdsOnly=true&geometry=%7B%22rings%22%3A%5B%5B%5B-93.266744044856253%2C44.9847001553116%5D%2C%5B-93.266596845520226%2C44.984694070854012%5D%2C%5B-93.266451636895056%2C44.98467589976687%5D%2C%5B-93.266310382765724%2C44.98464588779413%5D%2C%5B-93.266174993429686%2C44.984604440814181%5D%2C%5B-93.266047299859295%2C44.984552119350106%5D%2C%5B-93.265929028937506%2C44.984489630988236%5D%2C%5B-93.265821780102343%2C44.984417820807749%5D%2C%5B-93.26572700371571%2C44.984337659950775%5D%2C%5B-93.265645981449495%2C44.984250232487547%5D%2C%5B-93.265579808954016%2C44.984156720754534%5D%2C%5B-93.265529381043223%2C44.984058389363696%5D%2C%5B-93.265495379596842%2C44.983956568099423%5D%2C%5B-93.265478264343017%2C44.983852633934283%5D%2C%5B-93.265478266645687%2C44.983747992407096%5D%2C%5B-93.265495386380721%2C44.983644058615013%5D%2C%5B-93.265529391942579%2C44.983542238076737%5D%2C%5B-93.265579823381287%2C44.983443907725714%5D%2C%5B-93.26564599862688%2C44.983350397290266%5D%2C%5B-93.265727022717172%2C44.983262971312399%5D%2C%5B-93.26582179990352%2C44.983182812048504%5D%2C%5B-93.265929048470909%2C44.983111003482946%5D%2C%5B-93.266047318071855%2C44.98304851667077%5D%2C%5B-93.266175009339591%2C44.982996196607616%5D%2C%5B-93.266310395515248%2C44.982954750804318%5D%2C%5B-93.266451645796863%2C44.982924739720495%5D%2C%5B-93.266596850094416%2C44.982906569186611%5D%2C%5B-93.266744044856253%2C44.982900484916811%5D%2C%5B-93.26689123961809%2C44.982906569186611%5D%2C%5B-93.267036443915643%2C44.982924739720495%5D%2C%5B-93.267177694197258%2C44.982954750804318%5D%2C%5B-93.267313080372915%2C44.982996196607616%5D%2C%5B-93.267440771640651%2C44.98304851667077%5D%2C%5B-93.267559041241597%2C44.983111003482946%5D%2C%5B-93.267666289808986%2C44.983182812048504%5D%2C%5B-93.267761066995334%2C44.983262971312399%5D%2C%5B-93.267842091085626%2C44.983350397290259%5D%2C%5B-93.267908266331219%2C44.983443907725714%5D%2C%5B-93.267958697769927%2C44.983542238076744%5D%2C%5B-93.267992703331785%2C44.983644058615013%5D%2C%5B-93.268009823066819%2C44.983747992407096%5D%2C%5B-93.268009825369489%2C44.983852633934283%5D%2C%5B-93.267992710115664%2C44.983956568099423%5D%2C%5B-93.267958708669298%2C44.984058389363703%5D%2C%5B-93.26790828075849%2C44.984156720754534%5D%2C%5B-93.267842108263011%2C44.984250232487547%5D%2C%5B-93.267761085996796%2C44.984337659950768%5D%2C%5B-93.267666309610163%2C44.984417820807749%5D%2C%5B-93.267559060775%2C44.984489630988229%5D%2C%5B-93.267440789853211%2C44.984552119350106%5D%2C%5B-93.26731309628282%2C44.984604440814181%5D%2C%5B-93.267177706946782%2C44.984645887794123%5D%2C%5B-93.26703645281745%2C44.98467589976687%5D%2C%5B-93.26689124419228%2C44.984694070854012%5D%2C%5B-93.266744044856253%2C44.9847001553116%5D%5D%5D%2C%22spatialReference%22%3A%7B%22wkid%22%3A4326%7D%7D&geometryType=esriGeometryPolygon&";
-        APIUtils apiUtils = new APIUtils();
-        apiUtils.callAPI(url, params, new APIUtils.View.APICallback() {
-            @Override
-            public void onSuccess(String response) {
-
-            }
-
-            @Override
-            public void onError(String error) {
-
-            }
-        });
     }
 
     public void hideBottomSheet() {
@@ -920,8 +1123,7 @@ public class MainActivity extends AppCompatActivity {
 
     private void showMarkers(List<Marker> markers) {
         for (Marker m : markers) {
-            SpatialReference sp = m.getSpatialReference();
-            Point marker = new Point(m.lon, m.lat, sp);
+            Point marker = new Point(m.lon, m.lat,  m.getSpatialReference());
             SimpleMarkerSymbol sms = new SimpleMarkerSymbol(SimpleMarkerSymbol.Style.CIRCLE, m.getColor(), 12);
             Graphic g = new Graphic(marker, sms);
             mGraphicsOverlay.getGraphics().add(g);
