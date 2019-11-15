@@ -18,4 +18,8 @@
     <color name="danger_red">#F32013</color>
     <color name="success_green">#50DD50</color>
 
+    <color name="white_very_trans">#40FFFFFF</color>
+    <color name="white_trans">#80FFFFFF</color>
+
+
 </resources>

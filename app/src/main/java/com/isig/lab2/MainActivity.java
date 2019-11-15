@@ -86,6 +86,7 @@ import java.util.Map;
 import java.util.concurrent.ExecutionException;
 
 import com.google.gson.Gson;
+import com.isig.lab2.models.CondadosID;
 import com.isig.lab2.models.Configuration;
 import com.isig.lab2.models.ExportOptions;
 import com.isig.lab2.models.Extent;
@@ -125,6 +126,12 @@ public class MainActivity extends AppCompatActivity {
     public List<Graphic> viejosCondadosGraficos = new ArrayList<>();
     public AreaUnit km2Unit = new AreaUnit(AreaUnitId.SQUARE_KILOMETERS);
     public LinearUnit mUnit = new LinearUnit(LinearUnitId.METERS);
+
+    public List<Graphic> viejasInterseccionesGraficos = new ArrayList<>();
+    public List<TextSymbol> viejasTextSymbol = new ArrayList<>();
+
+    private String previousState;
+    private String curentState;
 
     private GraphicsOverlay mGraphicsCondados;
     private Graphic currentBuffer;
@@ -533,7 +540,7 @@ public class MainActivity extends AppCompatActivity {
             } catch (InterruptedException | ExecutionException e) {
                 if (e.getCause() instanceof ArcGISRuntimeException) {
                     ArcGISRuntimeException agsEx = (ArcGISRuntimeException)e.getCause();
-                    Log.d("Add Feature Error", agsEx.getErrorCode() + "\n=" + agsEx.getMessage());
+                    showError("Add Feature Error" + agsEx.getErrorCode() + "\n=" + agsEx.getMessage());
                 } else {
                     e.printStackTrace();
                 }
@@ -632,7 +639,7 @@ public class MainActivity extends AppCompatActivity {
                 } catch (InterruptedException | ExecutionException e) {
                     if (e.getCause() instanceof ArcGISRuntimeException) {
                         ArcGISRuntimeException agsEx = (ArcGISRuntimeException)e.getCause();
-                        Log.d("addFeatureRoute", "Add Feature Error :"+ agsEx.getErrorCode()+"\n\t"+ agsEx.getMessage());
+                        showError("addFeatureRoute, Add Feature Error :"+ agsEx.getErrorCode()+"\n\t"+ agsEx.getMessage());
                     } else {
                         e.printStackTrace();
                     }
@@ -760,9 +767,7 @@ public class MainActivity extends AppCompatActivity {
         if (g instanceof Polyline && g.getInternal() != null && g.getInternal().w() != null && !g.getInternal().w().equals("")) {
             Path path = new Gson().fromJson(g.getInternal().w(), Path.class);
             if (path.getPaths() != null && path.getPaths().length > 0) {
-                Log.d("Graphic " + i, ", " + g.getInternal().w());
                 List<Marker> markerPoints = path.getPoints(representation);
-                Log.d("path.getPoints", " size: " + markerPoints.size());
 
                 if (!markerPoints.isEmpty()) {
                     distTotal = Path.largoCaminoEnKm(markerPoints);
@@ -795,7 +800,6 @@ public class MainActivity extends AppCompatActivity {
 
     private void showPosition(Marker m, SimpleMarkerSymbol.Style style, int size) {
         if (m != null) {
-            Log.d("showPosition: ", m.lat + " " + m.lon);
             currentPositionPoint = new Point(m.lon, m.lat, m.getSpatialReference());
         }
         SimpleMarkerSymbol sms = new SimpleMarkerSymbol(style, currentPositionColor, size);
@@ -806,26 +810,32 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void showBuffer(Marker m) {
-        Log.d("showBuffer: ", "Entro con el marker (" + m.lon + ", " + m.lat + ")");
-        double radio = 1000.0;
+        double radio= 1000.0;
 
-        Point center = new Point(m.lon, m.lat, m.getSpatialReference());
-        Geometry bufferGeometryGeodesic = GeometryEngine.bufferGeodetic(center, radio, mUnit, Double.NaN, GeodeticCurveType.GEODESIC);
-        Log.d("showBuffer", "Creo el buffer: " + bufferGeometryGeodesic.toJson());
+        SpatialReference sp = m.getSpatialReference();
+        Point centro = new Point(m.lon, m.lat, sp);
 
         SimpleLineSymbol geodesicOutlineSymbol = new SimpleLineSymbol(SimpleLineSymbol.Style.SOLID, Color.BLACK, 2);
-        SimpleFillSymbol geodesicBufferFillSymbol = new SimpleFillSymbol(SimpleFillSymbol.Style.SOLID,  0x88FF0000, geodesicOutlineSymbol);
+        SimpleFillSymbol geodesicBufferFillSymbol = new SimpleFillSymbol(SimpleFillSymbol.Style.SOLID,  R.color.white_very_trans, geodesicOutlineSymbol);
 
+        Geometry bufferGeometryGeodesic = GeometryEngine.bufferGeodetic(centro, radio, mUnit, Double.NaN, GeodeticCurveType.GEODESIC);
         Graphic geodesicBufferGraphic = new Graphic(bufferGeometryGeodesic, geodesicBufferFillSymbol);
+        buscarCondados((Polygon) bufferGeometryGeodesic);
 
         mGraphicsCondados.getGraphics().add(geodesicBufferGraphic);
         mGraphicsCondados.getGraphics().remove(currentBuffer);
-        currentBuffer = geodesicBufferGraphic;
 
-        buscarCondados((Polygon) bufferGeometryGeodesic);
+        currentBuffer = geodesicBufferGraphic;
     }
 
     private void buscarCondados(Polygon buffer) {
+
+        Map<String, String> params = new HashMap<>();
+        params.put("geometry",buffer.toJson());
+        params.put("geometryType", "esriGeometryPolygon");
+        params.put("spatialRel", "esriSpatialRelIntersects");
+        //params.put("returnIdsOnly", "false");
+        params.put("f", "json");
 
         String uri = Uri.parse(getString(R.string.url_server_intersects))
                 .buildUpon()
@@ -835,69 +845,112 @@ public class MainActivity extends AppCompatActivity {
                 .appendQueryParameter("f", "json")
                 .build().toString();
 
-        Log.i("uri", uri);
-
-        APIUtils.callAPI(uri,null, null, new APIUtils.View.APICallback() {
+        APIUtils.callAPI(uri, null, null, new APIUtils.View.APICallback() {
             @Override
             public void onSuccess(String response) {
                 SimpleLineSymbol condadoLineaSimbolo = new SimpleLineSymbol(SimpleLineSymbol.Style.SOLID, Color.BLACK, 2);
-                SimpleFillSymbol condadoRellenoSimbolo = new SimpleFillSymbol(SimpleFillSymbol.Style.SOLID,  getColor(R.color.blue_trans),
-                        condadoLineaSimbolo);
-                List<Graphic> nuevosCondadosGraficos= new ArrayList<>();
-                Geometry condadoGeometria, interseccionGeometria;
-                Graphic condadoGrafico;
-                double areaCondado=0,  areaInterseccion=0, areaCondadoG=0,  areaInterseccionG=0;
-                //List<Graphic> viejosCondadosGraficos= new ArrayList<>();
+                SimpleFillSymbol condadoRellenoSimbolo = new SimpleFillSymbol(SimpleFillSymbol.Style.SOLID,  getColor(R.color.blue_trans), condadoLineaSimbolo);
 
-                //Log.d("requestPosta", "onResponse:\n\t"+response);
-                Intersecciones respuesta = new Gson().fromJson(response, Intersecciones.class);
+                final Intersecciones respuesta = new Gson().fromJson(response, Intersecciones.class);
 
-                //Recorro todos los condados que itnerseccionan con el buffer
-                for (int iCondado = 0; iCondado < respuesta.features.size(); iCondado++) {
-                    //Creo el grafico y lo agrego a la lista nuevos graficos
-                    Log.d("requestPosta", "Parseo:\n\t"+respuesta.features.get(iCondado).geometry.toString());
-                    Log.d("requestPosta", "SpatialReference.buffer:\n\t"+buffer.getSpatialReference().toJson());
-                    SpatialReference sp = SpatialReference.create(respuesta.spatialReference.get("wkid"));
-                    condadoGeometria = Geometry.fromJson(respuesta.features.get(iCondado).geometry.toString(),sp);
-                    Log.d("requestPosta", "SpatialReference.condadoGeometry:\n\t"+condadoGeometria.getSpatialReference().toJson());
-                    condadoGeometria=GeometryEngine.project(condadoGeometria, buffer.getSpatialReference());
-                    Log.d("requestPosta", "SpatialReference.CondadoGemetry.project:\n\t"+condadoGeometria.getSpatialReference().toJson());
-                    areaCondado= GeometryEngine.area((Polygon) condadoGeometria);
-                    areaCondadoG= GeometryEngine.areaGeodetic(condadoGeometria, km2Unit,GeodeticCurveType.GEODESIC);
-                    condadoGrafico = new Graphic(condadoGeometria, condadoRellenoSimbolo);
-                    nuevosCondadosGraficos.add(condadoGrafico);
-                    //Hallo la interseccion
-                    interseccionGeometria = GeometryEngine.intersection(buffer,condadoGeometria);
-                    areaInterseccion = GeometryEngine.area((Polygon) interseccionGeometria);
-                    areaInterseccionG = GeometryEngine.areaGeodetic(interseccionGeometria, km2Unit,GeodeticCurveType.GEODESIC);
-                    Log.d("requestPosta", "Areas            (condado, interseccion): ("+areaCondado+","+areaInterseccion+")");
-                    Log.d("requestPosta", "AreasGeodetic    (condado, interseccion): ("+areaCondadoG+","+areaInterseccionG+")");
-                }
-                Log.d("requestPosta", "Tengo que borrar "+viejosCondadosGraficos.size()+"condados viejos");
-                //Para cada condado viejo
-                for (int iCondadoViejo = 0; iCondadoViejo < viejosCondadosGraficos.size(); iCondadoViejo++) {
-                    //Si ya no es parte de los condados nuevos
-                    if (!nuevosCondadosGraficos.contains(viejosCondadosGraficos.get(iCondadoViejo))) {
-                        //Dejo de mostrarlo
-                        mGraphicsOverlay.getGraphics().remove(viejosCondadosGraficos.get(iCondadoViejo));
+                APIUtils.callAPI(uri + "&returnIdsOnly=true", null, null, new APIUtils.View.APICallback() {
+                    @Override
+                    public void onSuccess(String response) {
+                        List<Graphic> nuevosCondadosGraficos= new ArrayList<>();
+                        List<Graphic> nuevasInterseccionesGraficos= new ArrayList<>();
+                        List<TextSymbol> nuevasTextSymbol=new ArrayList();
+                        Geometry condadoGeometria;
+                        Graphic condadoGrafico;
+                        double areaCondadoG=0,  areaInterseccionG=0;
+                        final CondadosID respuestaCondadosIds= new Gson().fromJson(response, CondadosID.class);
+                        final double [] condadosIds = respuestaCondadosIds.objectIds;
+
+                        //Recorro todos los condados que itnerseccionan con el buffer
+                        for (int iCondado = 0; iCondado < respuesta.features.size(); iCondado++) {
+
+                            SpatialReference sp = SpatialReference.create(respuesta.spatialReference.get("wkid"));
+                            condadoGeometria = Geometry.fromJson(respuesta.features.get(iCondado).geometry.toString(),sp);
+                            condadoGeometria=GeometryEngine.project(condadoGeometria, buffer.getSpatialReference());
+
+                            //areaCondado= GeometryEngine.area((Polygon) condadoGeometria);
+                            areaCondadoG= GeometryEngine.areaGeodetic(condadoGeometria, km2Unit,GeodeticCurveType.GEODESIC);
+                            condadoGrafico = new Graphic(condadoGeometria, condadoRellenoSimbolo);
+                            nuevosCondadosGraficos.add(condadoGrafico);
+                            //Hallo la interseccion
+                            final Geometry interseccionGeometria = GeometryEngine.intersection(buffer,condadoGeometria);
+                            //areaInterseccion = GeometryEngine.area((Polygon) interseccionGeometria);
+                            areaInterseccionG = GeometryEngine.areaGeodetic(interseccionGeometria, km2Unit,GeodeticCurveType.GEODESIC);
+                            double ratioG =areaInterseccionG/areaCondadoG;
+
+                            String urlPoblacion=getString(R.string.url_server_poblacion);
+                            String paramsPoblacion="searchText="+condadosIds[iCondado]+"&contains=true&searchFields=OBJECTID&returnZ=false&returnM=false&layers=3&f=pjson&returnGeometry=false";
+
+                            APIUtils.callAPI(null, urlPoblacion, paramsPoblacion, new APIUtils.View.APICallback() {
+                                @Override
+                                public void onSuccess(String responsePoblacion) {
+                                    String previoAEstado="\"State Abbreviation\": \"";
+                                    String previoAPoblacion="\"2010 Total Population\": \"";
+                                    String posteriorAPoblacion="\",";
+                                    String[] s1 =  responsePoblacion.split(previoAEstado);
+                                    curentState = s1[1].split(posteriorAPoblacion)[0];
+                                    s1= responsePoblacion.split(previoAPoblacion);
+                                    String[] s2 = s1[1].split(posteriorAPoblacion);
+                                    String poblacionString = s2[0];
+                                    long poblacionInterseccion= Math.round(Double.parseDouble(poblacionString)*ratioG);
+
+                                    TextSymbol txtSymbol = new TextSymbol();//10, poblacionInterseccion, Color.BLUE);
+                                    txtSymbol.setText(String.valueOf(poblacionInterseccion));
+                                    txtSymbol.setColor(Color.WHITE);
+                                    txtSymbol.setBackgroundColor(R.color.white_trans);
+                                    nuevasTextSymbol.add(txtSymbol);
+                                    Graphic interseccionGrafico=new Graphic(interseccionGeometria,txtSymbol);
+                                    mGraphicsOverlay.getGraphics().add(interseccionGrafico);
+                                    nuevasInterseccionesGraficos.add(interseccionGrafico);
+
+                                    new Handler().postDelayed(() -> interseccionGrafico.setSymbol(null), 2000);
+                                }
+
+                                @Override
+                                public void onError(String errorPoblacion) {
+
+                                }
+                            });
+                        }
+
+                        for (int iCondadoViejo = 0; iCondadoViejo < viejosCondadosGraficos.size(); iCondadoViejo++) {
+                            if (!nuevosCondadosGraficos.contains(viejosCondadosGraficos.get(iCondadoViejo))) {
+                                //Dejo de mostrarlo
+                                mGraphicsOverlay.getGraphics().remove(viejosCondadosGraficos.get(iCondadoViejo));
+                            }
+                        }
+
+                        //Para cada condado nuevo
+                        for (int iCondadoNuevo = 0; iCondadoNuevo < nuevosCondadosGraficos.size(); iCondadoNuevo++) {
+                            //Si no lo estoy mostrando
+                            if (!mGraphicsOverlay.getGraphics().contains(nuevosCondadosGraficos.get(iCondadoNuevo))) {
+                                mGraphicsOverlay.getGraphics().add(nuevosCondadosGraficos.get(iCondadoNuevo));
+                            }
+
+                        }
+                        for (int iSimbologiasViejas = 0; iSimbologiasViejas< viejasTextSymbol.size(); iSimbologiasViejas++) {
+                            mGraphicsOverlay.getGraphics().remove(viejasTextSymbol.get(iSimbologiasViejas));
+                        }
+
+                        //Elimino todas las intersecciones viejas, siempre va a ser distinta a la anterior
+                        for (int iInterseccionesViejas = 0; iInterseccionesViejas< viejasInterseccionesGraficos.size(); iInterseccionesViejas++) {
+                            mGraphicsOverlay.getGraphics().remove(viejasInterseccionesGraficos.get(iInterseccionesViejas));
+                        }
+
+                        viejosCondadosGraficos=nuevosCondadosGraficos;
+                        viejasInterseccionesGraficos= nuevasInterseccionesGraficos;
+                        viejasTextSymbol=nuevasTextSymbol;
                     }
-                }
-                Log.d("requestPosta", "Tengo que agregar "+nuevosCondadosGraficos.size()+"condados viejos");
-                //Para cada condado nuevo
-                for (int iCondadoNuevo = 0; iCondadoNuevo < nuevosCondadosGraficos.size(); iCondadoNuevo++) {
-                    //Si no lo estoy mostrando
-                    if (!mGraphicsOverlay.getGraphics().contains(nuevosCondadosGraficos.get(iCondadoNuevo))) {
-                        Log.d("requestPosta", "Agregando Condado:\n\t"+nuevosCondadosGraficos.get(iCondadoNuevo).toString());
-                        //Empiezo a mostrarlo
-                        mGraphicsOverlay.getGraphics().add(nuevosCondadosGraficos.get(iCondadoNuevo));
+
+                    @Override
+                    public void onError(String error) {
+
                     }
-
-                }
-                //Guardo en la lista de Condados viejos los condados nuevos para usar en el proximo refresh
-                viejosCondadosGraficos=nuevosCondadosGraficos;
-
-                //tengo que obtener los features de cada condado
-
+                });
             }
 
             @Override
