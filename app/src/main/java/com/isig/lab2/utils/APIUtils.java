@@ -33,7 +33,7 @@ public class APIUtils {
                     try {
                         if (response.isSuccessful() && response.body() != null) {
                             String body = response.body().string();
-                            Log.d("APIUtils", "onResponse, body str" + body);
+                            //Log.d("APIUtils", "onResponse, body str" + body);
                             callback.onSuccess(body);
                         }
                     } catch (Exception e) {

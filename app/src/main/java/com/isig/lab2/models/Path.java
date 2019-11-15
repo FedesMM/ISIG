@@ -74,7 +74,7 @@ public class Path implements Serializable {
         List<Marker> list = new ArrayList<>();
         if (representation == Marker.REPRESENTATION_UTM) {
             Geometry g = GeometryEngine.project(new Point(getPaths()[0][0][0], getPaths()[0][0][1], SpatialReference.create(102100)), SpatialReference.create(4326));
-            Log.d("getPoints", g.toJson());
+            //Log.d("getPoints", g.toJson());
             if (g instanceof Point) {
                 list.add(new Marker(((Point) g).getX(), ((Point) g).getY(), representation));
             }
@@ -87,7 +87,7 @@ public class Path implements Serializable {
                 if (j > 0) {
                     if (representation == Marker.REPRESENTATION_UTM) {
                         Geometry g = GeometryEngine.project(new Point(getPaths()[i][j][0], getPaths()[i][j][1], SpatialReference.create(102100)), SpatialReference.create(4326));
-                        Log.d("getPoints", g.toJson());
+                        //Log.d("getPoints", g.toJson());
                         if (g instanceof Point) {
                             list.add(new Marker(((Point) g).getX(), ((Point) g).getY(), representation));
                         }

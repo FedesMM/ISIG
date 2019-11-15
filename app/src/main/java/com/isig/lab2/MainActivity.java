@@ -44,8 +44,6 @@ import com.esri.arcgisruntime.symbology.SimpleMarkerSymbol;
 import com.esri.arcgisruntime.symbology.TextSymbol;
 import com.esri.arcgisruntime.tasks.geocode.GeocodeParameters;
 import com.esri.arcgisruntime.tasks.geocode.GeocodeResult;
-import com.esri.arcgisruntime.tasks.geocode.LocatorAttribute;
-import com.esri.arcgisruntime.tasks.geocode.LocatorInfo;
 import com.esri.arcgisruntime.tasks.geocode.LocatorTask;
 import com.esri.arcgisruntime.tasks.networkanalysis.Route;
 import com.esri.arcgisruntime.tasks.networkanalysis.RouteParameters;
@@ -108,7 +106,7 @@ public class MainActivity extends AppCompatActivity {
     private static String CLAVE_BUSQUEDA ="Description";
     private static String VALOR_BUSQUEDA ="Grupo 3";
 
-    private static double SIMULATION_REFRESH_RATE = 1;
+    private static double SIMULATION_REFRESH_RATE = 0.33;
 
     // Puntos
     private FeatureLayer featureLayerPuntos;
@@ -121,8 +119,6 @@ public class MainActivity extends AppCompatActivity {
     private Feature selectedFeatureRuta = null;
 
     // Condados
-    private ServiceFeatureTable serviceFeatureTableCondados;
-    private FeatureLayer featureLayerCondados;
     public List<Graphic> viejosCondadosGraficos = new ArrayList<>();
     public AreaUnit km2Unit = new AreaUnit(AreaUnitId.SQUARE_KILOMETERS);
     public LinearUnit mUnit = new LinearUnit(LinearUnitId.METERS);
@@ -131,7 +127,7 @@ public class MainActivity extends AppCompatActivity {
     public List<TextSymbol> viejasTextSymbol = new ArrayList<>();
 
     private String previousState;
-    private String curentState;
+    private String currentState;
 
     private GraphicsOverlay mGraphicsCondados;
     private Graphic currentBuffer;
@@ -147,9 +143,11 @@ public class MainActivity extends AppCompatActivity {
     // current position
     private Graphic currentPosition;
     private Point currentPositionPoint;
+    private Marker currentPositionMarker;
     private int currentPositionColor = Path.getColorBySpeedIndex(Path.getMediumSpeedIndex());
-    private SimpleMarkerSymbol.Style currentPositionStyle = SimpleMarkerSymbol.Style.DIAMOND;
-    private int currentPositionSize = 15;
+    private int currentPositionStyle = 0;
+    private SimpleMarkerSymbol.Style[] currentSyles = new SimpleMarkerSymbol.Style[3];
+    private int currentPositionSize = 18;
     private Handler showCurrentPositionHandler;
     private Runnable runnable;
     private RoutePointRequestModel request;
@@ -182,6 +180,10 @@ public class MainActivity extends AppCompatActivity {
             addPointToggleText.requestLayout();
         }
 
+        currentSyles[0] = SimpleMarkerSymbol.Style.CIRCLE;
+        currentSyles[1] = SimpleMarkerSymbol.Style.SQUARE;
+        currentSyles[2] = SimpleMarkerSymbol.Style.TRIANGLE;
+
         progressBar.setVisibility(View.VISIBLE);
         setSupportActionBar(toolbar);
 
@@ -191,7 +193,7 @@ public class MainActivity extends AppCompatActivity {
         setupOAuthManager();
 
         // set up map
-        ArcGISMap map = new ArcGISMap(Basemap.Type.STREETS_VECTOR, 39.222678, -105.998207, 16);
+        ArcGISMap map = new ArcGISMap(Basemap.Type.STREETS_VECTOR, 44.986656, -93.258133, 16);
 
         serviceFeatureTablePuntos = new ServiceFeatureTable(getString(R.string.url_server_puntos));
         featureLayerPuntos = new FeatureLayer(serviceFeatureTablePuntos);
@@ -201,17 +203,12 @@ public class MainActivity extends AppCompatActivity {
         featureLayerRutas = new FeatureLayer(serviceFeatureTableRutas);
         map.getOperationalLayers().add(featureLayerRutas);
 
-        serviceFeatureTableCondados = new ServiceFeatureTable(getString(R.string.url_server_condados));
-        featureLayerCondados = new FeatureLayer(serviceFeatureTableCondados);
-        featureLayerCondados.setVisible(false);
-        map.getOperationalLayers().add(featureLayerCondados);
-
         mMapView.setMap(map);
 
         // *** Georeferenciacion ***
         setupLocator();
 
-        /**Ruta mas corta**/
+        // Ruta mas corta
         mMapView.setOnTouchListener(new DefaultMapViewOnTouchListener(this, mMapView) {
             @Override
             public boolean onSingleTapConfirmed(MotionEvent e) {
@@ -355,7 +352,7 @@ public class MainActivity extends AppCompatActivity {
         return super.onOptionsItemSelected(item);
     }
 
-    //Georeferenciacion
+    // Georeferenciacion
     private void queryLocator(final String query) {
         if (query != null && query.length() > 0) {
             mLocatorTask.cancelLoad();
@@ -468,23 +465,12 @@ public class MainActivity extends AppCompatActivity {
                 Log.d("Init", "Cargo el locator");
                 progressBar.setVisibility(View.GONE);
                 locatorLoaded = true;
-                desplegarInfoLocator(mLocatorTask);
 
             } else {
                 Log.d("Init", "No cargo el locator");
             }
         });
         mLocatorTask.loadAsync();
-    }
-
-    private void desplegarInfoLocator(LocatorTask locatorTask) {
-        LocatorInfo locatorInfo = locatorTask.getLocatorInfo();
-        List<String> resultAttributeNames = new ArrayList<>();
-
-        for (LocatorAttribute resultAttribute : locatorInfo.getResultAttributes()) {
-            resultAttributeNames.add(resultAttribute.getDisplayName());
-            System.out.print(resultAttribute.getName() + ": " + resultAttribute.getDisplayName() + " ");
-        }
     }
 
     // Mostrar puntos, lineas y poligonos
@@ -588,7 +574,7 @@ public class MainActivity extends AppCompatActivity {
                 Iterator<Feature> resultIteratorPrueba = result.iterator();
                 if (resultIteratorPrueba.hasNext()) {
                     serviceFeatureTablePuntos.deleteFeaturesAsync(result).get();
-                    final List<FeatureEditResult> featureEditResults = serviceFeatureTablePuntos.applyEditsAsync().get();
+                    serviceFeatureTablePuntos.applyEditsAsync().get();
                 } else {
                     Toast.makeText(this, "No encuentra puntos con Descripcion: " + VALOR_BUSQUEDA, Toast.LENGTH_LONG).show();
                 }
@@ -680,17 +666,6 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
-    //Ruta mas corta
-    private void mapClicked(Point location) {
-
-        float markerSize = 8.0f;
-        float markerOutlineThickness = 2.0f;
-        SimpleMarkerSymbol pointSymbol = new SimpleMarkerSymbol(SimpleMarkerSymbol.Style.DIAMOND, Color.rgb(226, 119, 40), markerSize);
-        pointSymbol.setOutline(new SimpleLineSymbol(SimpleLineSymbol.Style.SOLID, Color.BLUE, markerOutlineThickness));
-        Graphic pointGraphic = new Graphic(location, pointSymbol);
-        mGraphicsOverlay.getGraphics().add(pointGraphic);
-    }
-
     private void showError(String message) {
         Log.d("showError", message);
         Toast.makeText(getApplicationContext(), message, Toast.LENGTH_LONG).show();
@@ -751,19 +726,19 @@ public class MainActivity extends AppCompatActivity {
         speedSeekBar.setVisibility(View.VISIBLE);
         Log.d("mGraphicsOverlay size", mGraphicsOverlay.getGraphics().size() + " ");
 
-        Geometry g = null;
+        Geometry g;
         if (selectedFeatureRuta != null) {
             g = selectedFeatureRuta.getGeometry();
-            parsePath(g, 0, Marker.REPRESENTATION_UTM);
+            parsePath(g, Marker.REPRESENTATION_UTM);
         } else {
             for (int i = 0; i < mGraphicsOverlay.getGraphics().size(); i++) {
                 g = mGraphicsOverlay.getGraphics().get(i).getGeometry();
-                parsePath(g, i, Marker.REPRESENTATION_WGS84);
+                parsePath(g, Marker.REPRESENTATION_WGS84);
             }
         }
     }
 
-    private void parsePath(Geometry g, int i, int representation) {
+    private void parsePath(Geometry g, int representation) {
         if (g instanceof Polyline && g.getInternal() != null && g.getInternal().w() != null && !g.getInternal().w().equals("")) {
             Path path = new Gson().fromJson(g.getInternal().w(), Path.class);
             if (path.getPaths() != null && path.getPaths().length > 0) {
@@ -788,7 +763,7 @@ public class MainActivity extends AppCompatActivity {
         if (request.resultMarker != null) {
             showCurrentPositionHandler = new Handler();
             runnable = () -> {
-                showPosition(request.resultMarker, currentPositionStyle, currentPositionSize);
+                showPosition(request.resultMarker, currentSyles[currentPositionStyle], currentPositionSize);
                 showBuffer(request.resultMarker);
                 showPointByInterval(Path.nextPoint(request));
             };
@@ -801,6 +776,7 @@ public class MainActivity extends AppCompatActivity {
     private void showPosition(Marker m, SimpleMarkerSymbol.Style style, int size) {
         if (m != null) {
             currentPositionPoint = new Point(m.lon, m.lat, m.getSpatialReference());
+            currentPositionMarker = m;
         }
         SimpleMarkerSymbol sms = new SimpleMarkerSymbol(style, currentPositionColor, size);
         Graphic g = new Graphic(currentPositionPoint, sms);
@@ -809,11 +785,29 @@ public class MainActivity extends AppCompatActivity {
         currentPosition = g;
     }
 
+    private void manageStateChange() {
+        if (currentState != null) {
+            if (previousState == null) {
+                previousState = currentState;
+            } else {
+                Log.d("manageStateChange", "currentState: " + currentState + ", previousState: " + previousState);
+                if (!previousState.equals(currentState)) {
+                    currentPositionColor++;
+                    if (currentPositionColor > currentSyles.length) {
+                        currentPositionColor = 0;
+                    }
+                    if (currentPositionMarker != null) {
+                        showPosition(currentPositionMarker, currentSyles[currentPositionStyle], currentPositionSize);
+                    }
+                }
+            }
+        }
+    }
+
     private void showBuffer(Marker m) {
         double radio= 1000.0;
 
-        SpatialReference sp = m.getSpatialReference();
-        Point centro = new Point(m.lon, m.lat, sp);
+        Point centro = new Point(m.lon, m.lat, m.getSpatialReference());
 
         SimpleLineSymbol geodesicOutlineSymbol = new SimpleLineSymbol(SimpleLineSymbol.Style.SOLID, Color.BLACK, 2);
         SimpleFillSymbol geodesicBufferFillSymbol = new SimpleFillSymbol(SimpleFillSymbol.Style.SOLID,  R.color.white_very_trans, geodesicOutlineSymbol);
@@ -829,13 +823,6 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void buscarCondados(Polygon buffer) {
-
-        Map<String, String> params = new HashMap<>();
-        params.put("geometry",buffer.toJson());
-        params.put("geometryType", "esriGeometryPolygon");
-        params.put("spatialRel", "esriSpatialRelIntersects");
-        //params.put("returnIdsOnly", "false");
-        params.put("f", "json");
 
         String uri = Uri.parse(getString(R.string.url_server_intersects))
                 .buildUpon()
@@ -858,7 +845,7 @@ public class MainActivity extends AppCompatActivity {
                     public void onSuccess(String response) {
                         List<Graphic> nuevosCondadosGraficos= new ArrayList<>();
                         List<Graphic> nuevasInterseccionesGraficos= new ArrayList<>();
-                        List<TextSymbol> nuevasTextSymbol=new ArrayList();
+                        List<TextSymbol> nuevasTextSymbol = new ArrayList<>();
                         Geometry condadoGeometria;
                         Graphic condadoGrafico;
                         double areaCondadoG=0,  areaInterseccionG=0;
@@ -868,9 +855,12 @@ public class MainActivity extends AppCompatActivity {
                         //Recorro todos los condados que itnerseccionan con el buffer
                         for (int iCondado = 0; iCondado < respuesta.features.size(); iCondado++) {
 
-                            SpatialReference sp = SpatialReference.create(respuesta.spatialReference.get("wkid"));
+                            SpatialReference sp = SpatialReference.create(102100);
+                            if (respuesta.spatialReference != null && respuesta.spatialReference.containsKey("wkid")) {
+                                sp = SpatialReference.create(respuesta.spatialReference.get("wkid"));
+                            }
                             condadoGeometria = Geometry.fromJson(respuesta.features.get(iCondado).geometry.toString(),sp);
-                            condadoGeometria=GeometryEngine.project(condadoGeometria, buffer.getSpatialReference());
+                            condadoGeometria = GeometryEngine.project(condadoGeometria, buffer.getSpatialReference());
 
                             //areaCondado= GeometryEngine.area((Polygon) condadoGeometria);
                             areaCondadoG= GeometryEngine.areaGeodetic(condadoGeometria, km2Unit,GeodeticCurveType.GEODESIC);
@@ -892,7 +882,9 @@ public class MainActivity extends AppCompatActivity {
                                     String previoAPoblacion="\"2010 Total Population\": \"";
                                     String posteriorAPoblacion="\",";
                                     String[] s1 =  responsePoblacion.split(previoAEstado);
-                                    curentState = s1[1].split(posteriorAPoblacion)[0];
+                                    currentState = s1[1].split(posteriorAPoblacion)[0];
+                                    Log.d("currentState", "currentState: " + currentState);
+                                    manageStateChange();
                                     s1= responsePoblacion.split(previoAPoblacion);
                                     String[] s2 = s1[1].split(posteriorAPoblacion);
                                     String poblacionString = s2[0];
@@ -978,7 +970,7 @@ public class MainActivity extends AppCompatActivity {
         Extent extent = new Extent(p1.x, p1.y, p4.x, p4.y);
         request.mapOptions = new MapOptions();
         request.mapOptions.extent = extent;
-        request.mapOptions.scale = mMapView.getMapScale(); // TODO, funca esto? es asi?
+        request.mapOptions.scale = mMapView.getMapScale();
         Map<String, Integer> map = new HashMap<>();
         request.mapOptions.spatialReference = new MySpatialReference(102100);
 
@@ -1003,7 +995,7 @@ public class MainActivity extends AppCompatActivity {
 
         Log.d("map2PDF", "request: " + request.toString());
 
-        String uri = Uri.parse("https://sampleserver5.arcgisonline.com/arcgis/rest/services/Utilities/PrintingTools/GPServer/Export Web Map Task/execute?")// todo, 5 o 6?
+        String uri = Uri.parse("https://sampleserver5.arcgisonline.com/arcgis/rest/services/Utilities/PrintingTools/GPServer/Export Web Map Task/execute?")
                 .buildUpon()
                 .appendQueryParameter("Web_Map_as_JSON", request.toString())
                 .appendQueryParameter("returnZ", "false")
@@ -1070,7 +1062,7 @@ public class MainActivity extends AppCompatActivity {
         featureLayerPuntos.clearSelection();
         currentPosition = null;
         speedSeekBar.setVisibility(View.INVISIBLE);
-        mGraphicsOverlay.getGraphics().clear(); // TODO: limpiar tabla de rutas
+        mGraphicsOverlay.getGraphics().clear();
         if (showCurrentPositionHandler != null) {
             showCurrentPositionHandler.removeCallbacks(runnable);
         }
@@ -1144,7 +1136,6 @@ public class MainActivity extends AppCompatActivity {
                 Log.d("onMarkerAdded", "");
                 Toast.makeText(MainActivity.this, getString(R.string.marker_added), Toast.LENGTH_LONG).show();
                 addFeaturePoint(point, true);
-                //showMarkers(markers);
             }
 
             @Override
@@ -1164,7 +1155,6 @@ public class MainActivity extends AppCompatActivity {
                 Log.d("onMarkerAdded", "");
                 Toast.makeText(MainActivity.this, getString(R.string.marker_added), Toast.LENGTH_LONG).show();
                 addFeaturePoint(new Point(marker.lon, marker.lat), true);
-                //showMarkers(markers);
             }
 
             @Override
@@ -1172,15 +1162,6 @@ public class MainActivity extends AppCompatActivity {
                 Log.d("onMarkerAddingCanceled", "");
             }
         });
-    }
-
-    private void showMarkers(List<Marker> markers) {
-        for (Marker m : markers) {
-            Point marker = new Point(m.lon, m.lat,  m.getSpatialReference());
-            SimpleMarkerSymbol sms = new SimpleMarkerSymbol(SimpleMarkerSymbol.Style.CIRCLE, m.getColor(), 12);
-            Graphic g = new Graphic(marker, sms);
-            mGraphicsOverlay.getGraphics().add(g);
-        }
     }
 }
 

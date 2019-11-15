@@ -40,12 +40,12 @@
     <string name="config_saved">Configuración Guardada</string>
 
     <!-- *** Server URLs ***-->
-    <string name="url_server_puntos">http://sampleserver5.arcgisonline.com/arcgis/rest/services/LocalGovernment/Events/FeatureServer/0</string>
-    <string name="url_server_rutas">http://sampleserver5.arcgisonline.com/arcgis/rest/services/LocalGovernment/Recreation/FeatureServer/1</string>
-    <string name="url_server_condados">http://services.arcgisonline.com/arcgis/rest/services/Demographics/USA_1990-2000_Population_Change/MapServer/3</string>
+    <string name="url_server_puntos">https://sampleserver5.arcgisonline.com/arcgis/rest/services/LocalGovernment/Events/FeatureServer/0</string>
+    <string name="url_server_rutas">https://sampleserver5.arcgisonline.com/arcgis/rest/services/LocalGovernment/Recreation/FeatureServer/1</string>
+    <string name="url_server_condados">https://services.arcgisonline.com/arcgis/rest/services/Demographics/USA_1990-2000_Population_Change/MapServer/3</string>
     <string name="url_server_intersects">https://services.arcgisonline.com/arcgis/rest/services/Demographics/USA_1990-2000_Population_Change/MapServer/3/query</string>
-    <string name="url_server_busqueda">http://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer</string>
-    <string name="url_server_poblacion">http://services.arcgisonline.com/arcgis/rest/services/Demographics/USA_1990-2000_Population_Change/MapServer/find</string>
+    <string name="url_server_busqueda">https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer</string>
+    <string name="url_server_poblacion">https://services.arcgisonline.com/arcgis/rest/services/Demographics/USA_1990-2000_Population_Change/MapServer/find</string>
     <string name="page_url">"https://www.arcgis.com"</string>
 
     <string name="map_to_pdf_text">Exportar mapa a PDF</string>
