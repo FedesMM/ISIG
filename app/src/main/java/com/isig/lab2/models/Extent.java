@@ -9,12 +9,14 @@ public class Extent implements Serializable {
     public double ymin;
     public double xmax;
     public double ymax;
+    public MySpatialReference spatialReference;
 
-    public Extent(double xmin, double ymin, double xmax, double ymax) {
+    public Extent(double xmin, double ymin, double xmax, double ymax, MySpatialReference spatialReference) {
         this.xmin = xmin;
         this.ymin = ymin;
         this.xmax = xmax;
         this.ymax = ymax;
+        this.spatialReference = spatialReference;
     }
 
     @Override

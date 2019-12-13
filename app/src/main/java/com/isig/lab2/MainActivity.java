@@ -457,7 +457,7 @@ public class MainActivity extends AppCompatActivity {
             if (mLocatorTask.getLoadStatus() == LoadStatus.LOADED) {
                 mGeocodeParameters = new GeocodeParameters();
                 mGeocodeParameters.getResultAttributeNames().add("*");
-                mGeocodeParameters.setMaxResults(1);
+                mGeocodeParameters.setMaxResults(5);
                 mGraphicsOverlay = new GraphicsOverlay();
                 mMapView.getGraphicsOverlays().add(mGraphicsOverlay);
                 mGraphicsCondados = new GraphicsOverlay();
@@ -959,16 +959,24 @@ public class MainActivity extends AppCompatActivity {
         android.graphics.Point p1 = new android.graphics.Point(0, 0);
         android.graphics.Point p4 = new android.graphics.Point(Utils.getScreenWidth(this), Utils.getScreenHeight(this));
 
+        Point point1 = mMapView.screenToLocation(p1);
+        Point point4 = mMapView.screenToLocation(p4);
+
+        Geometry g1 = GeometryEngine.project(point1, SpatialReference.create(4326));
+        Geometry g4 = GeometryEngine.project(point4, SpatialReference.create(4326));
+
+        Log.d("map2PDF", " g1: " + ((Point) g1).getY() + ", " + ((Point) g1).getX() + ", g4: " + ((Point) g4).getY() + ", " + ((Point) g4).getX());
+        Log.d("map2PDF", " scale: " + mMapView.getMapScale());
+
         PdfRequest request = new PdfRequest();
-        Extent extent = new Extent(p1.x, p1.y, p4.x, p4.y);
+        Extent extent = new Extent(((Point) g1).getY(), ((Point) g1).getX(), ((Point) g4).getY(), ((Point) g4).getX(), new MySpatialReference(4326));
         request.mapOptions = new MapOptions();
         request.mapOptions.extent = extent;
         request.mapOptions.scale = mMapView.getMapScale();
-        request.mapOptions.spatialReference = new MySpatialReference(102100);
+        request.mapOptions.spatialReference = new MySpatialReference(4326);
 
-        OperationalLayers layerPuntos = new OperationalLayers();
-        layerPuntos.title = "mapa";
-        layerPuntos.url = "https://services.arcgisonline.com/arcgis/rest/services/Demographics/USA_1990-2000_Population_Change/MapServer/";
+        OperationalLayers layerPuntos =
+                new OperationalLayers("mapa", "https://services.arcgisonline.com/arcgis/rest/services/Demographics/USA_1990-2000_Population_Change/MapServer/");
 
         request.operationalLayers = new ArrayList<>();
         request.operationalLayers.add(layerPuntos);
@@ -981,13 +989,15 @@ public class MainActivity extends AppCompatActivity {
 
         Log.d("map2PDF", "request: " + request.toString());
 
-        String uri = Uri.parse("https://sampleserver5.arcgisonline.com/arcgis/rest/services/Utilities/PrintingTools/GPServer/Export Web Map Task/execute?")
+        String uri = Uri.parse("https://sampleserver5.arcgisonline.com/arcgis/rest/services/Utilities/PrintingTools/GPServer/Export%20Web%20Map%20Task/execute?")
                 .buildUpon()
                 .appendQueryParameter("Web_Map_as_JSON", request.toString())
                 .appendQueryParameter("returnZ", "false")
                 .appendQueryParameter("returnM", "false")
                 .appendQueryParameter("returnTrueCurves", "false")
                 .appendQueryParameter("returnFeatureCollection", "false")
+                .appendQueryParameter("Output_File", "nameOfFile")
+                .appendQueryParameter("f", "html")
                 .build().toString();
 
         Log.d("map2PDF", "uri: "+uri);

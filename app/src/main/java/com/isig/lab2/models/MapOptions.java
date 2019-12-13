@@ -9,6 +9,7 @@ public class MapOptions implements Serializable {
     public Extent extent;
     public double scale;
     public MySpatialReference spatialReference;
+    public boolean showAttribution = false;
 
     @Override
     public String toString() {
